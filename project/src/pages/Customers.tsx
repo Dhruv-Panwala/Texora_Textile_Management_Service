@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Pencil, Plus, Search, Trash } from 'lucide-react';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
@@ -8,6 +8,7 @@ const emptyCustomer = { name: '', contact: '', address: '', gstNo: '', brokerNam
 const gstPattern = '[A-Za-z0-9]{15}';
 
 function Customers() {
+  const [error, setError] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
@@ -17,12 +18,16 @@ function Customers() {
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
-  const load = async () => {
-    const result = await api.get<PageResult<Customer>>(`/api/customers?page=${page}&size=25`);
-    setCustomers(result.content);
-    setTotalPages(result.totalPages);
-  };
-  useEffect(() => { load(); }, [page]);
+  const load = useCallback(async () => {
+    try {
+      const result = await api.get<PageResult<Customer>>(`/api/customers?page=${page}&size=25`);
+      setCustomers(result.content);
+      setTotalPages(result.totalPages);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load customers');
+    }
+  }, [page]);
+  useEffect(() => { load(); }, [load]);
 
   const customerPayload = (customer: typeof emptyCustomer) => ({
     ...customer,
@@ -32,10 +37,15 @@ function Customers() {
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post<Customer>('/api/customers', customerPayload(newCustomer));
-    setNewCustomer(emptyCustomer);
-    setIsAddingCustomer(false);
-    await load();
+    setError('');
+    try {
+      await api.post<Customer>('/api/customers', customerPayload(newCustomer));
+      setNewCustomer(emptyCustomer);
+      setIsAddingCustomer(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save customer');
+    }
   };
 
   const startEdit = (customer: Customer) => {
@@ -60,17 +70,27 @@ function Customers() {
     if (editingCustomerId == null) {
       return;
     }
-    await api.put<Customer>(`/api/customers/${editingCustomerId}`, customerPayload(editingCustomer));
-    cancelEdit();
-    await load();
+    setError('');
+    try {
+      await api.put<Customer>(`/api/customers/${editingCustomerId}`, customerPayload(editingCustomer));
+      cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update customer');
+    }
   };
 
   const remove = async (customer: Customer) => {
     if (!confirmDelete(`customer "${customer.name}"`)) {
       return;
     }
-    await api.delete(`/api/customers/${customer.id}`);
-    await load();
+    setError('');
+    try {
+      await api.delete(`/api/customers/${customer.id}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete customer');
+    }
   };
 
   const exportCsv = () => downloadCsv('customers.csv', filteredCustomers, [
@@ -104,6 +124,8 @@ function Customers() {
           </button>
         </div>
       </div>
+
+      {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>}
 
       {isAddingCustomer && (
         <form onSubmit={handleAddCustomer} className="form-surface space-y-4">

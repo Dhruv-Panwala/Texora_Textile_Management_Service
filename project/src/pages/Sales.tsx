@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Download, FileText, Minus, Pencil, Plus, Trash } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../services/api';
@@ -32,16 +32,20 @@ function Sales() {
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
-  const load = async () => {
-    const [salesPage, customersPage] = await Promise.all([
-      api.get<PageResult<Sale>>(`/api/sales?page=${page}&size=25`),
-      api.get<PageResult<Customer>>('/api/customers?page=0&size=100'),
-    ]);
-    setSales(salesPage.content);
-    setTotalPages(salesPage.totalPages);
-    setCustomers(customersPage.content);
-  };
-  useEffect(() => { load(); }, [page]);
+  const load = useCallback(async () => {
+    try {
+      const [salesPage, customersPage] = await Promise.all([
+        api.get<PageResult<Sale>>(`/api/sales?page=${page}&size=25`),
+        api.get<PageResult<Customer>>('/api/customers?page=0&size=100'),
+      ]);
+      setSales(salesPage.content);
+      setTotalPages(salesPage.totalPages);
+      setCustomers(customersPage.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load sales');
+    }
+  }, [page]);
+  useEffect(() => { load(); }, [load]);
 
   const totalMeters = useMemo(() => newSale.takaEntries.reduce((sum, t) => sum + Number(t.meters || 0), 0), [newSale.takaEntries]);
   const totalAmount = totalMeters * Number(newSale.rate || 0);
@@ -108,8 +112,13 @@ function Sales() {
     if (!confirmDelete(`sale challan ${sale.challanNo}`)) {
       return;
     }
-    await api.delete(`/api/sales/${sale.id}`);
-    await load();
+    setError('');
+    try {
+      await api.delete(`/api/sales/${sale.id}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete sale');
+    }
   };
 
   const addTakaField = (sale: typeof emptySale, setSale: React.Dispatch<React.SetStateAction<typeof emptySale>>) => {

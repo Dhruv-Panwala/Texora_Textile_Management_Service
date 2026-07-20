@@ -77,7 +77,7 @@ public class SaleService {
     @Transactional
     public Sale updateSale(Long id, Sale updatedSale) {
         Sale existingSale = getSale(id);
-        existingSale.setCustomer(updatedSale.getCustomer());
+        existingSale.setCustomer(resolveCustomer(updatedSale.getCustomer()));
         existingSale.setBrokerName(updatedSale.getBrokerName());
         existingSale.setQuality(updatedSale.getQuality());
         existingSale.setSaleDate(updatedSale.getSaleDate());
@@ -117,11 +117,7 @@ public class SaleService {
     }
 
     private void prepareSale(Sale sale, boolean assignChallanNo) {
-        if (sale.getCustomer() == null || sale.getCustomer().getId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Customer ID is required");
-        }
-        Customer customer = customerRepository.findByIdAndCompany_Id(sale.getCustomer().getId(), currentCompanyId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Customer not found with ID: " + sale.getCustomer().getId()));
+        Customer customer = resolveCustomer(sale.getCustomer());
         sale.setCustomer(customer);
 
         if (sale.getSaleDate() == null) {
@@ -186,6 +182,16 @@ public class SaleService {
         sale.setBillNo(numbers.billNumber());
         validateChallanRange(sale, financialYear, sale.getId());
         validateBillNo(sale, financialYear, sale.getId());
+    }
+
+    private Customer resolveCustomer(Customer requestedCustomer) {
+        if (requestedCustomer == null || requestedCustomer.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Customer ID is required");
+        }
+        Long customerId = requestedCustomer.getId();
+        return customerRepository.findByIdAndCompany_Id(customerId, currentCompanyId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Customer not found with ID: " + customerId));
     }
 
     private void applyPaymentDetails(Sale sale, PaymentUpdate payment) {

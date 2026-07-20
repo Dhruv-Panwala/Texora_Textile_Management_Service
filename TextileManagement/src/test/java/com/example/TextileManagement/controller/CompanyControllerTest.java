@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -73,6 +75,21 @@ class CompanyControllerTest {
         MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", "not-an-image".getBytes());
 
         assertThrows(ResponseStatusException.class, () -> controller.updateCompanyLogo(file));
+    }
+
+    @Test
+    void readsStoredLogoWithoutRedirectingToObjectStorage() {
+        byte[] logo = new byte[] {1, 2, 3};
+        profile.setLogoStorageKey("companies/10/logos/logo");
+        profile.setLogoContentType("image/png");
+        when(objectStorage.isEnabled()).thenReturn(true);
+        when(objectStorage.read(profile.getLogoStorageKey())).thenReturn(logo);
+
+        ResponseEntity<byte[]> response = controller.getCompanyLogo();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("image/png", response.getHeaders().getContentType().toString());
+        assertArrayEquals(logo, response.getBody());
     }
 
     private byte[] png(int width, int height) throws Exception {

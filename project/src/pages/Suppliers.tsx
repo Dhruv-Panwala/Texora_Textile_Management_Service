@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Download, Pencil, Plus, Search, Trash } from 'lucide-react';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
@@ -7,6 +7,7 @@ import { PageResult, Supplier } from '../types';
 const emptySupplier = { name: '', contact: '', address: '' };
 
 function Suppliers() {
+  const [error, setError] = useState('');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
@@ -16,19 +17,28 @@ function Suppliers() {
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
-  const load = async () => {
-    const result = await api.get<PageResult<Supplier>>(`/api/suppliers?page=${page}&size=25`);
-    setSuppliers(result.content);
-    setTotalPages(result.totalPages);
-  };
-  useEffect(() => { load(); }, [page]);
+  const load = useCallback(async () => {
+    try {
+      const result = await api.get<PageResult<Supplier>>(`/api/suppliers?page=${page}&size=25`);
+      setSuppliers(result.content);
+      setTotalPages(result.totalPages);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load suppliers');
+    }
+  }, [page]);
+  useEffect(() => { load(); }, [load]);
 
   const handleAddSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post<Supplier>('/api/suppliers', { ...newSupplier, contact: newSupplier.contact.trim() });
-    setNewSupplier(emptySupplier);
-    setIsAddingSupplier(false);
-    await load();
+    setError('');
+    try {
+      await api.post<Supplier>('/api/suppliers', { ...newSupplier, contact: newSupplier.contact.trim() });
+      setNewSupplier(emptySupplier);
+      setIsAddingSupplier(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save supplier');
+    }
   };
 
   const startEdit = (supplier: Supplier) => {
@@ -50,17 +60,27 @@ function Suppliers() {
     if (editingSupplierId == null) {
       return;
     }
-    await api.put<Supplier>(`/api/suppliers/${editingSupplierId}`, { ...editingSupplier, contact: editingSupplier.contact.trim() });
-    cancelEdit();
-    await load();
+    setError('');
+    try {
+      await api.put<Supplier>(`/api/suppliers/${editingSupplierId}`, { ...editingSupplier, contact: editingSupplier.contact.trim() });
+      cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update supplier');
+    }
   };
 
   const remove = async (supplier: Supplier) => {
     if (!confirmDelete(`supplier "${supplier.name}"`)) {
       return;
     }
-    await api.delete(`/api/suppliers/${supplier.id}`);
-    await load();
+    setError('');
+    try {
+      await api.delete(`/api/suppliers/${supplier.id}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete supplier');
+    }
   };
 
   const filteredSuppliers = suppliers.filter(supplier =>
@@ -91,6 +111,8 @@ function Suppliers() {
           </button>
         </div>
       </div>
+
+      {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>}
 
       {isAddingSupplier && (
         <form onSubmit={handleAddSupplier} className="form-surface space-y-4">

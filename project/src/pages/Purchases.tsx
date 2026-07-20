@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { format } from 'date-fns';
 import { Download, Pencil, Plus, Trash } from 'lucide-react';
 import { api } from '../services/api';
@@ -15,6 +15,7 @@ const emptyPurchase = {
 };
 
 function Purchases() {
+  const [error, setError] = useState('');
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -24,16 +25,20 @@ function Purchases() {
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
-  const load = async () => {
-    const [purchasePage, supplierPage] = await Promise.all([
-      api.get<PageResult<Purchase>>(`/api/purchases?page=${page}&size=25`),
-      api.get<PageResult<Supplier>>('/api/suppliers?page=0&size=100'),
-    ]);
-    setPurchases(purchasePage.content);
-    setTotalPages(purchasePage.totalPages);
-    setSuppliers(supplierPage.content);
-  };
-  useEffect(() => { load(); }, [page]);
+  const load = useCallback(async () => {
+    try {
+      const [purchasePage, supplierPage] = await Promise.all([
+        api.get<PageResult<Purchase>>(`/api/purchases?page=${page}&size=25`),
+        api.get<PageResult<Supplier>>('/api/suppliers?page=0&size=100'),
+      ]);
+      setPurchases(purchasePage.content);
+      setTotalPages(purchasePage.totalPages);
+      setSuppliers(supplierPage.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load purchases');
+    }
+  }, [page]);
+  useEffect(() => { load(); }, [load]);
 
   const purchasePayload = (purchase: typeof emptyPurchase) => ({
     purchaseDate: purchase.purchaseDate || null,
@@ -46,10 +51,15 @@ function Purchases() {
 
   const handleNewPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post<Purchase>('/api/purchases', purchasePayload(newPurchase));
-    setIsAdding(false);
-    setNewPurchase(emptyPurchase);
-    await load();
+    setError('');
+    try {
+      await api.post<Purchase>('/api/purchases', purchasePayload(newPurchase));
+      setIsAdding(false);
+      setNewPurchase(emptyPurchase);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save purchase');
+    }
   };
 
   const startEdit = (purchase: Purchase) => {
@@ -69,18 +79,28 @@ function Purchases() {
     if (editingPurchaseId == null) {
       return;
     }
-    await api.put<Purchase>(`/api/purchases/${editingPurchaseId}`, purchasePayload(editingPurchase));
-    setEditingPurchaseId(null);
-    setEditingPurchase(emptyPurchase);
-    await load();
+    setError('');
+    try {
+      await api.put<Purchase>(`/api/purchases/${editingPurchaseId}`, purchasePayload(editingPurchase));
+      setEditingPurchaseId(null);
+      setEditingPurchase(emptyPurchase);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update purchase');
+    }
   };
 
   const remove = async (purchase: Purchase) => {
     if (!confirmDelete(`purchase from "${purchase.supplier?.name || 'supplier'}"`)) {
       return;
     }
-    await api.delete(`/api/purchases/${purchase.id}`);
-    await load();
+    setError('');
+    try {
+      await api.delete(`/api/purchases/${purchase.id}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete purchase');
+    }
   };
 
   const exportCsv = () => downloadCsv('purchases.csv', purchases, [
@@ -142,6 +162,8 @@ function Purchases() {
           </button>
         </div>
       </div>
+
+      {error && <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>}
 
       {isAdding && (
         <form onSubmit={handleNewPurchase} className="form-surface space-y-4">

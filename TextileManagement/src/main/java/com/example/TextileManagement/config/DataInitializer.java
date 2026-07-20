@@ -1,6 +1,7 @@
 package com.example.TextileManagement.config;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -15,6 +16,7 @@ import com.example.TextileManagement.entities.Workspace;
 import com.example.TextileManagement.entities.WorkspaceMember;
 
 @Component
+@ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true")
 public class DataInitializer implements CommandLineRunner {
     private final UserAccountRepository userRepository;
     private final CompanyProfileRepository companyProfileRepository;

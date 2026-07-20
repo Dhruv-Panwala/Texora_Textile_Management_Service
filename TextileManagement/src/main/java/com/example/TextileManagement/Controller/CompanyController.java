@@ -128,14 +128,17 @@ public class CompanyController {
         CompanyProfile profile = repository.findById(currentCompanyId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company profile not found"));
         if (profile.getLogoStorageKey() != null && objectStorage.isEnabled()) {
-            return ResponseEntity.status(HttpStatus.FOUND).location(objectStorage.signedGet(profile.getLogoStorageKey())).build();
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .contentType(logoContentType(profile))
+                    .body(objectStorage.read(profile.getLogoStorageKey()));
         }
         if (profile.getLogoData() == null || profile.getLogoContentType() == null) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
-                .contentType(MediaType.parseMediaType(profile.getLogoContentType()))
+                .contentType(logoContentType(profile))
                 .body(profile.getLogoData());
     }
 
@@ -188,6 +191,12 @@ public class CompanyController {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private MediaType logoContentType(CompanyProfile profile) {
+        return profile.getLogoContentType() == null
+                ? MediaType.APPLICATION_OCTET_STREAM
+                : MediaType.parseMediaType(profile.getLogoContentType());
     }
 
     private Long currentCompanyId() {

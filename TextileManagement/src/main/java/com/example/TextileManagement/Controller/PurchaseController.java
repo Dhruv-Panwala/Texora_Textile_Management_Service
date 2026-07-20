@@ -66,7 +66,7 @@ public class PurchaseController {
     public ResponseEntity<Purchase> update(@PathVariable Long id, @RequestBody Purchase request) {
         return purchaseRepository.findByIdAndCompany_Id(id, currentCompanyId()).map(existing -> {
             existing.setPurchaseDate(request.getPurchaseDate());
-            existing.setSupplier(request.getSupplier());
+            existing.setSupplier(resolveSupplier(request.getSupplier()));
             existing.setMaterialType(request.getMaterialType());
             existing.setDescription(request.getDescription());
             existing.setQuantity(request.getQuantity());
@@ -103,11 +103,7 @@ public class PurchaseController {
     }
 
     private Purchase prepare(Purchase purchase) {
-        if (purchase.getSupplier() == null || purchase.getSupplier().getId() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Supplier ID is required");
-        }
-        Supplier supplier = supplierRepository.findByIdAndCompany_Id(purchase.getSupplier().getId(), currentCompanyId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Supplier not found"));
+        Supplier supplier = resolveSupplier(purchase.getSupplier());
         purchase.setSupplier(supplier);
         if (purchase.getPurchaseDate() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Purchase date is required");
@@ -135,6 +131,14 @@ public class PurchaseController {
             purchase.setStatus("PENDING");
         }
         return purchase;
+    }
+
+    private Supplier resolveSupplier(Supplier requestedSupplier) {
+        if (requestedSupplier == null || requestedSupplier.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Supplier ID is required");
+        }
+        return supplierRepository.findByIdAndCompany_Id(requestedSupplier.getId(), currentCompanyId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Supplier not found"));
     }
 
     private void applyPaymentDetails(Purchase purchase, PaymentUpdate payment) {
