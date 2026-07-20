@@ -1,0 +1,116 @@
+import React, { useEffect, useState } from 'react';
+import { format, isAfter, parseISO } from 'date-fns';
+import { AlertCircle, Download } from 'lucide-react';
+import { api } from '../services/api';
+import { downloadCsv } from '../utils/csv';
+import { Payment, PaymentUpdate } from '../types';
+
+const emptyPayment: PaymentUpdate = { paymentDate: '', paymentMode: 'CASH', chequeNo: '' };
+
+function Payments() {
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [activePayment, setActivePayment] = useState<Payment | null>(null);
+  const [paymentDetails, setPaymentDetails] = useState<PaymentUpdate>(emptyPayment);
+  const load = async () => setPayments(await api.get<Payment[]>('/api/payments'));
+  useEffect(() => { load(); }, []);
+
+  const openPaymentForm = (payment: Payment) => {
+    setActivePayment(payment);
+    setPaymentDetails({ ...emptyPayment, paymentDate: payment.sourceDate });
+  };
+
+  const markPaid = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activePayment) {
+      return;
+    }
+    await api.patchBody(
+      activePayment.type === 'TO_SUPPLIER' ? `/api/purchases/${activePayment.sourceId}/paid` : `/api/sales/${activePayment.sourceId}/paid`,
+      paymentDetails,
+    );
+    setActivePayment(null);
+    setPaymentDetails(emptyPayment);
+    await load();
+  };
+
+  const exportCsv = () => downloadCsv('payments.csv', payments, [
+    { header: 'Type', value: (payment) => payment.type },
+    { header: 'Party', value: (payment) => payment.entityName },
+    { header: 'Material/Quality', value: (payment) => payment.materialOrClothType },
+    { header: 'Source Date', value: (payment) => payment.sourceDate },
+    { header: 'Due Date', value: (payment) => payment.dueDate },
+    { header: 'Amount', value: (payment) => payment.amount },
+    { header: 'Payment Date', value: (payment) => payment.paymentDate },
+    { header: 'Payment Mode', value: (payment) => payment.paymentMode },
+    { header: 'Cheque No', value: (payment) => payment.chequeNo },
+    { header: 'Status', value: (payment) => payment.status },
+  ]);
+
+  const section = (title: string, type: Payment['type'], action: string) => {
+    const items = payments.filter((p) => p.type === type);
+    return (
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">{title}</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead><tr>{['Due Date', 'Party', 'Material/Quality', 'Amount', 'Status'].map(h => <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>)}</tr></thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {items.map((payment) => {
+                const overdue = isAfter(new Date(), parseISO(payment.dueDate));
+                return (
+                  <tr key={`${payment.type}-${payment.sourceId}`} className={overdue ? 'bg-red-50' : ''}>
+                    <td className="px-6 py-4 text-sm"><span className="flex items-center gap-2">{overdue && <AlertCircle className="w-4 h-4 text-red-500" />}{format(new Date(payment.dueDate), 'dd MMM yyyy')}</span></td>
+                    <td className="px-6 py-4 text-sm">{payment.entityName}</td>
+                    <td className="px-6 py-4 text-sm">{payment.materialOrClothType}</td>
+                    <td className="px-6 py-4 text-sm">Rs {payment.amount?.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm"><button onClick={() => openPaymentForm(payment)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">{action}</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="page-shell">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Payments</h1>
+          <p className="page-subtitle">Follow overdue collections and supplier payouts with a clearer action-focused layout.</p>
+        </div>
+        <button onClick={exportCsv} className="btn-secondary">
+          <Download className="w-5 h-5" /> Export CSV
+        </button>
+      </div>
+      {activePayment && (
+        <form onSubmit={markPaid} className="form-surface space-y-4">
+          <div className="font-semibold text-gray-900">
+            {activePayment.type === 'TO_SUPPLIER' ? 'Mark payment as paid' : 'Mark payment as received'} - {activePayment.entityName}
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input type="date" required min={activePayment.sourceDate} className="border rounded-md px-3 py-2" value={paymentDetails.paymentDate} onChange={(e) => setPaymentDetails({ ...paymentDetails, paymentDate: e.target.value })} />
+            <select className="border rounded-md px-3 py-2" value={paymentDetails.paymentMode} onChange={(e) => setPaymentDetails({ ...paymentDetails, paymentMode: e.target.value as PaymentUpdate['paymentMode'], chequeNo: '' })}>
+              <option value="CASH">Cash</option>
+              <option value="CHEQUE">Cheque</option>
+              <option value="UPI">UPI</option>
+            </select>
+            {paymentDetails.paymentMode === 'CHEQUE' && (
+              <input required className="border rounded-md px-3 py-2" placeholder="Cheque number" value={paymentDetails.chequeNo || ''} onChange={(e) => setPaymentDetails({ ...paymentDetails, chequeNo: e.target.value })} />
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-primary">Save Payment</button>
+            <button type="button" className="btn-secondary" onClick={() => setActivePayment(null)}>Cancel</button>
+          </div>
+        </form>
+      )}
+      {section('Payments to Suppliers', 'TO_SUPPLIER', 'Mark as Paid')}
+      {section('Payments from Customers', 'FROM_CUSTOMER', 'Received')}
+    </div>
+  );
+}
+
+export default Payments;

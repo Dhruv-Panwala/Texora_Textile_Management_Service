@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-textile_management}
+      POSTGRES_USER: ${POSTGRES_USER:-textile}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-textile_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-textile} -d ${POSTGRES_DB:-textile_management}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./TextileManagement
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-textile_management}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-textile}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-textile_password}
+      APP_CORS_ALLOWED_ORIGIN: ${APP_CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+      APP_SESSION_COOKIE_SECURE: ${APP_SESSION_COOKIE_SECURE:-false}
+      APP_FAMILY_USERNAME: ${APP_FAMILY_USERNAME:-family}
+      APP_FAMILY_PASSWORD: ${APP_FAMILY_PASSWORD:-change-me}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+
+  frontend:
+    build:
+      context: ./project
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+
+volumes:
+  postgres_data:

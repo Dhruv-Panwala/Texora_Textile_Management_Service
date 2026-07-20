@@ -1,0 +1,199 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg: 246 244 238;
+    --surface: 255 251 245;
+    --surface-strong: 255 255 255;
+    --text: 36 31 26;
+    --muted: 113 104 95;
+    --border: 224 214 203;
+    --accent: 172 95 47;
+    --accent-deep: 113 58 26;
+    --accent-soft: 247 232 217;
+    --ink-soft: 71 60 52;
+    --success: 27 94 70;
+    --danger: 184 61 45;
+    --warning: 171 102 22;
+  }
+
+  html {
+    min-height: 100%;
+    background:
+      radial-gradient(circle at top left, rgba(230, 191, 158, 0.32), transparent 28%),
+      radial-gradient(circle at top right, rgba(191, 214, 200, 0.28), transparent 25%),
+      linear-gradient(180deg, rgb(252, 248, 242), rgb(244, 239, 233));
+    color: rgb(var(--text));
+    font-family: 'Manrope', sans-serif;
+  }
+
+  body {
+    min-height: 100vh;
+    color: rgb(var(--text));
+    background: transparent;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.03em;
+  }
+
+  input,
+  select,
+  textarea {
+    @apply w-full rounded-2xl border px-4 py-3 text-sm transition duration-200;
+    border-color: rgb(var(--border));
+    background: rgba(255, 255, 255, 0.82);
+    color: rgb(var(--text));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: rgba(var(--muted), 0.9);
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    outline: none;
+    border-color: rgba(var(--accent), 0.8);
+    box-shadow:
+      0 0 0 4px rgba(172, 95, 47, 0.12),
+      0 8px 22px rgba(113, 58, 26, 0.08);
+  }
+
+  button {
+    transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, color 160ms ease;
+  }
+
+  button:hover {
+    transform: translateY(-1px);
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply min-h-screen;
+    background:
+      radial-gradient(circle at 15% 15%, rgba(224, 183, 132, 0.22), transparent 20%),
+      radial-gradient(circle at 85% 18%, rgba(165, 196, 182, 0.18), transparent 20%),
+      linear-gradient(180deg, rgba(255, 252, 247, 0.85), rgba(244, 239, 233, 0.92));
+  }
+
+  .glass-panel {
+    @apply rounded-[28px] border shadow-xl;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 249, 241, 0.84));
+    border-color: rgba(255, 255, 255, 0.6);
+    box-shadow:
+      0 20px 45px rgba(88, 61, 36, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px);
+  }
+
+  .page-shell {
+    @apply space-y-6 sm:space-y-8;
+  }
+
+  .page-header {
+    @apply flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between;
+  }
+
+  .page-title {
+    @apply text-3xl font-extrabold sm:text-4xl;
+    color: rgb(var(--text));
+    font-family: 'Fraunces', serif;
+  }
+
+  .page-subtitle {
+    @apply mt-2 max-w-2xl text-sm sm:text-base;
+    color: rgb(var(--muted));
+  }
+
+  .action-row {
+    @apply flex flex-wrap gap-3;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold text-white shadow-lg sm:px-5;
+    background: linear-gradient(135deg, rgb(var(--accent)), rgb(var(--accent-deep)));
+    box-shadow: 0 14px 30px rgba(113, 58, 26, 0.24);
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 18px 36px rgba(113, 58, 26, 0.28);
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold sm:px-5;
+    border-color: rgb(var(--border));
+    background: rgba(255, 255, 255, 0.72);
+    color: rgb(var(--ink-soft));
+    box-shadow: 0 10px 24px rgba(88, 61, 36, 0.06);
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold;
+    color: rgb(var(--ink-soft));
+    background: rgba(255, 255, 255, 0.4);
+  }
+
+  .card-surface {
+    @apply glass-panel p-5 sm:p-6;
+  }
+
+  .form-surface {
+    @apply glass-panel p-5 sm:p-6;
+  }
+
+  .table-surface {
+    @apply glass-panel overflow-hidden;
+  }
+
+  .data-table {
+    @apply min-w-full;
+  }
+
+  .data-table thead {
+    background: rgba(247, 232, 217, 0.72);
+  }
+
+  .data-table th {
+    @apply px-4 py-3 text-left text-[11px] font-bold uppercase tracking-[0.16em] sm:px-6;
+    color: rgb(var(--muted));
+  }
+
+  .data-table td {
+    @apply px-4 py-4 text-sm sm:px-6;
+    color: rgb(var(--ink-soft));
+    border-top: 1px solid rgba(224, 214, 203, 0.72);
+  }
+
+  .data-table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.45);
+  }
+
+  .stat-chip {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold;
+    background: rgba(247, 232, 217, 0.78);
+    color: rgb(var(--accent-deep));
+  }
+
+  .mobile-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+}

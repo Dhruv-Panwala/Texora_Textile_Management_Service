@@ -1,0 +1,18 @@
+.env
+*.log
+backend-dev.err
+frontend-dev.err
+
+# Local databases and generated build output
+TextileManagement/data/
+TextileManagement/target/
+project/dist/
+project/node_modules/
+skills-lock.json
+.agents/skills/neon/SKILL.md
+.agents/skills/neon-postgres/SKILL.md
+.agents/skills/neon-postgres/references/neon-sdk.md
+TextileManagement/src/main/resources/pdf-assets/DevashishTextileLogo.png
+TextileManagement/src/main/resources/pdf-assets/logo.png
+TextileManagement/src/main/resources/pdf-assets/Ritika Creation.jpeg
+DEPLOYMENT.md

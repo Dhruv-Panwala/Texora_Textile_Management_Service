@@ -1,0 +1,20 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(254);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(150);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE';
+
+UPDATE users
+SET email = CASE
+    WHEN POSITION('@' IN username) > 1 THEN LOWER(username)
+    ELSE NULL
+END
+WHERE email IS NULL;
+
+UPDATE users
+SET status = 'ACTIVE'
+WHERE status IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_users_email ON users(email);
+
+ALTER TABLE users
+    ADD CONSTRAINT chk_users_status
+    CHECK (status IN ('ACTIVE', 'DISABLED'));
