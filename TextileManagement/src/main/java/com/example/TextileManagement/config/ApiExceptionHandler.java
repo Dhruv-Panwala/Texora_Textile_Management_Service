@@ -6,9 +6,13 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<ApiError> handleStatus(ResponseStatusException exception) {
         String reason = exception.getReason() == null ? "Request failed" : exception.getReason();
@@ -21,7 +25,8 @@ public class ApiExceptionHandler {
     }
 
     @ExceptionHandler(Exception.class)
-    ResponseEntity<ApiError> handleUnexpected(Exception ignored) {
+    ResponseEntity<ApiError> handleUnexpected(Exception exception) {
+        log.error("Unhandled API request failure", exception);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ApiError("Something went wrong"));
     }
 
