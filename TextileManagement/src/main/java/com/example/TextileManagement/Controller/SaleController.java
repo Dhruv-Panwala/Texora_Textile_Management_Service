@@ -20,20 +20,16 @@ import com.example.TextileManagement.entities.PaymentUpdate;
 import com.example.TextileManagement.entities.Sale;
 import com.example.TextileManagement.service.PdfDocumentService;
 import com.example.TextileManagement.service.SaleService;
-import com.example.TextileManagement.service.PrivateObjectStorageService;
 
 @RestController
 @RequestMapping("/api/sales")
 public class SaleController {
     private final SaleService saleService;
     private final PdfDocumentService pdfDocumentService;
-    private final PrivateObjectStorageService objectStorage;
 
-    public SaleController(SaleService saleService, PdfDocumentService pdfDocumentService,
-            PrivateObjectStorageService objectStorage) {
+    public SaleController(SaleService saleService, PdfDocumentService pdfDocumentService) {
         this.saleService = saleService;
         this.pdfDocumentService = pdfDocumentService;
-        this.objectStorage = objectStorage;
     }
 
     @PostMapping
@@ -68,24 +64,18 @@ public class SaleController {
     }
 
     @GetMapping("/{id}/challan.pdf")
-    public ResponseEntity<?> challanPdf(@PathVariable Long id) {
+    public ResponseEntity<byte[]> challanPdf(@PathVariable Long id) {
         Sale sale = saleService.getSale(id);
         return pdfResponse(pdfDocumentService.generateChallan(sale), "challan", sale);
     }
 
     @GetMapping("/{id}/bill.pdf")
-    public ResponseEntity<?> billPdf(@PathVariable Long id) {
+    public ResponseEntity<byte[]> billPdf(@PathVariable Long id) {
         Sale sale = saleService.ensureBillNo(id);
         return pdfResponse(pdfDocumentService.generateBill(sale), "bill", sale);
     }
 
-    private ResponseEntity<?> pdfResponse(byte[] bytes, String type, Sale sale) {
-        if (objectStorage.isEnabled()) {
-            Long companyId = sale.getCompany().getId();
-            String key = "companies/" + companyId + "/sales/" + sale.getId() + "/" + type + ".pdf";
-            objectStorage.put(key, bytes, MediaType.APPLICATION_PDF_VALUE);
-            return ResponseEntity.status(HttpStatus.FOUND).location(objectStorage.signedGet(key)).build();
-        }
+    private ResponseEntity<byte[]> pdfResponse(byte[] bytes, String type, Sale sale) {
         String filename = pdfDocumentService.buildDownloadName(type, sale);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_PDF);

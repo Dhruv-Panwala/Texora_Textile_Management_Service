@@ -33,16 +33,17 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Sale> findByCompany_IdAndCustomer_NameContainingIgnoreCase(Long companyId, String name);
 
     @Query("""
-            select coalesce(sum(s.amount), 0), count(s), coalesce(sum(s.totalMeters), 0)
+            select s.saleDate, coalesce(sum(s.amount), 0), count(s), coalesce(sum(s.totalMeters), 0)
             from Sale s where s.company.id = :companyId and s.saleDate between :start and :end
+            group by s.saleDate
             """)
-    List<Object[]> aggregateByCompanyAndSaleDateBetween(Long companyId, LocalDate start, LocalDate end);
+    List<Object[]> aggregateDailyByCompanyAndSaleDateBetween(Long companyId, LocalDate start, LocalDate end);
 
-    @Query("select coalesce(sum(s.amount), 0) from Sale s where s.company.id = :companyId and s.status <> 'PAID'")
-    Object outstandingAmount(Long companyId);
-
-    @Query("select count(s) from Sale s where s.company.id = :companyId and s.status <> 'PAID' and s.dueDate < :today")
-    long countOverdue(Long companyId, LocalDate today);
+    @Query("""
+            select coalesce(sum(s.amount), 0), coalesce(sum(case when s.dueDate < :today then 1 else 0 end), 0)
+            from Sale s where s.company.id = :companyId and s.status <> 'PAID'
+            """)
+    List<Object[]> outstandingAndOverdueByCompany(Long companyId, LocalDate today);
 
     @Query("""
             select s.quality, coalesce(sum(s.amount), 0)

@@ -5,8 +5,11 @@ import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,8 +17,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.TextileManagement.config.CurrentCompanyContext;
-import com.example.TextileManagement.entities.Purchase;
-import com.example.TextileManagement.entities.Sale;
 import com.example.TextileManagement.repository.PurchaseRepository;
 import com.example.TextileManagement.repository.SaleRepository;
 
@@ -36,16 +37,19 @@ public class DashboardController {
     public DashboardSummary summary(@RequestParam(defaultValue = "monthly") String period) {
         DashboardPeriod selectedPeriod = DashboardPeriod.from(period);
         LocalDate today = LocalDate.now();
-        DateRange current = selectedPeriod.currentRange(today);
-        DateRange previous = selectedPeriod.previousRange(current);
-
         Long companyId = currentCompanyId();
-        PeriodTotals currentTotals = totalsForRange(companyId, current);
-        PeriodTotals previousTotals = totalsForRange(companyId, previous);
-        BigDecimal totalOutstandingSales = decimal(saleRepository.outstandingAmount(companyId));
-        BigDecimal totalOutstandingPurchases = decimal(purchaseRepository.outstandingAmount(companyId));
-        long overdueReceivables = saleRepository.countOverdue(companyId, today);
-        long overduePayables = purchaseRepository.countOverdue(companyId, today);
+        List<DateRange> trendRanges = selectedPeriod.trendRanges(today);
+        DateRange current = trendRanges.get(trendRanges.size() - 1);
+        DateRange oldest = trendRanges.get(0);
+        Map<LocalDate, RawTotals> salesByDate = totalsByDate(
+                saleRepository.aggregateDailyByCompanyAndSaleDateBetween(companyId, oldest.start(), current.end()));
+        Map<LocalDate, RawTotals> purchasesByDate = totalsByDate(
+                purchaseRepository.aggregateDailyByCompanyAndPurchaseDateBetween(companyId, oldest.start(), current.end()));
+        List<PeriodTotals> trendTotals = trendTotals(trendRanges, salesByDate, purchasesByDate);
+        PeriodTotals currentTotals = trendTotals.get(trendTotals.size() - 1);
+        PeriodTotals previousTotals = trendTotals.get(trendTotals.size() - 2);
+        OutstandingTotals salesOutstanding = outstandingTotals(saleRepository.outstandingAndOverdueByCompany(companyId, today));
+        OutstandingTotals purchaseOutstanding = outstandingTotals(purchaseRepository.outstandingAndOverdueByCompany(companyId, today));
 
         return new DashboardSummary(
                 selectedPeriod.name().toLowerCase(Locale.ROOT),
@@ -55,25 +59,33 @@ public class DashboardController {
                 previousTotals,
                 percentChange(currentTotals.totalSales(), previousTotals.totalSales()),
                 percentChange(currentTotals.totalPurchases(), previousTotals.totalPurchases()),
-                totalOutstandingSales,
-                totalOutstandingPurchases,
-                overdueReceivables,
-                overduePayables,
+                salesOutstanding.amount(),
+                purchaseOutstanding.amount(),
+                salesOutstanding.overdueCount(),
+                purchaseOutstanding.overdueCount(),
                 topQuality(companyId, current),
-                trend(companyId, selectedPeriod, today));
+                trend(trendRanges, trendTotals));
     }
 
-    private PeriodTotals totalsForRange(Long companyId, DateRange range) {
-        Object[] sales = firstAggregate(saleRepository.aggregateByCompanyAndSaleDateBetween(
-                companyId, range.start(), range.end()));
-        Object[] purchases = firstAggregate(purchaseRepository.aggregateByCompanyAndPurchaseDateBetween(
-                companyId, range.start(), range.end()));
-        BigDecimal totalSales = decimal(sales[0]);
-        BigDecimal totalPurchases = decimal(purchases[0]);
-        long saleCount = ((Number) sales[1]).longValue();
-        long purchaseCount = ((Number) purchases[1]).longValue();
-        double totalMeters = number(sales[2]);
-        double totalPurchaseQuantity = number(purchases[2]);
+    private List<PeriodTotals> trendTotals(List<DateRange> ranges, Map<LocalDate, RawTotals> salesByDate,
+            Map<LocalDate, RawTotals> purchasesByDate) {
+        List<PeriodTotals> totals = new ArrayList<>();
+        for (DateRange range : ranges) {
+            totals.add(totalsForRange(range, salesByDate, purchasesByDate));
+        }
+        return totals;
+    }
+
+    private PeriodTotals totalsForRange(DateRange range, Map<LocalDate, RawTotals> salesByDate,
+            Map<LocalDate, RawTotals> purchasesByDate) {
+        RawTotals sales = totalsForRange(salesByDate, range);
+        RawTotals purchases = totalsForRange(purchasesByDate, range);
+        BigDecimal totalSales = sales.amount();
+        BigDecimal totalPurchases = purchases.amount();
+        long saleCount = sales.count();
+        long purchaseCount = purchases.count();
+        double totalMeters = sales.quantity();
+        double totalPurchaseQuantity = purchases.quantity();
 
         return new PeriodTotals(
                 totalSales,
@@ -88,16 +100,45 @@ public class DashboardController {
                 purchaseCount == 0 ? BigDecimal.ZERO : totalPurchases.divide(BigDecimal.valueOf(purchaseCount), 2, RoundingMode.HALF_UP));
     }
 
-    private List<TrendPoint> trend(Long companyId, DashboardPeriod period, LocalDate today) {
-        List<TrendPoint> points = new java.util.ArrayList<>();
-        DateRange range = period.currentRange(today);
-        for (int i = 5; i >= 0; i--) {
-            DateRange bucket = range;
-            for (int j = 0; j < i; j++) {
-                bucket = period.previousRange(bucket);
+    private Map<LocalDate, RawTotals> totalsByDate(List<Object[]> rows) {
+        Map<LocalDate, RawTotals> totals = new HashMap<>();
+        for (Object[] row : rows) {
+            totals.put((LocalDate) row[0], new RawTotals(decimal(row[1]), longValue(row[2]), number(row[3])));
+        }
+        return totals;
+    }
+
+    private RawTotals totalsForRange(Map<LocalDate, RawTotals> totalsByDate, DateRange range) {
+        BigDecimal amount = BigDecimal.ZERO;
+        long count = 0;
+        double quantity = 0;
+        for (Map.Entry<LocalDate, RawTotals> entry : totalsByDate.entrySet()) {
+            LocalDate date = entry.getKey();
+            if (date.isBefore(range.start()) || date.isAfter(range.end())) {
+                continue;
             }
-            PeriodTotals totals = totalsForRange(companyId, bucket);
-            points.add(new TrendPoint(labelFor(period, bucket), totals.totalSales(), totals.totalPurchases(), totals.net()));
+            RawTotals totals = entry.getValue();
+            amount = amount.add(totals.amount());
+            count += totals.count();
+            quantity += totals.quantity();
+        }
+        return new RawTotals(amount, count, quantity);
+    }
+
+    private OutstandingTotals outstandingTotals(List<Object[]> results) {
+        if (results.isEmpty()) {
+            return new OutstandingTotals(BigDecimal.ZERO, 0L);
+        }
+        Object[] values = results.get(0);
+        return new OutstandingTotals(decimal(values[0]), longValue(values[1]));
+    }
+
+    private List<TrendPoint> trend(List<DateRange> ranges, List<PeriodTotals> totals) {
+        List<TrendPoint> points = new ArrayList<>();
+        for (int index = 0; index < ranges.size(); index++) {
+            DateRange range = ranges.get(index);
+            PeriodTotals periodTotals = totals.get(index);
+            points.add(new TrendPoint(labelFor(range), periodTotals.totalSales(), periodTotals.totalPurchases(), periodTotals.net()));
         }
         return points;
     }
@@ -110,8 +151,8 @@ public class DashboardController {
         return new TopQuality(String.valueOf(results.get(0)[0]), decimal(results.get(0)[1]));
     }
 
-    private String labelFor(DashboardPeriod period, DateRange range) {
-        return switch (period) {
+    private String labelFor(DateRange range) {
+        return switch (range.period()) {
             case WEEKLY -> range.start().getDayOfMonth() + " " + range.start().getMonth().name().substring(0, 3);
             case MONTHLY -> range.start().getMonth().name().substring(0, 3) + " " + range.start().getYear();
             case YEARLY -> String.valueOf(range.start().getYear());
@@ -142,8 +183,8 @@ public class DashboardController {
         return value == null ? 0.0 : ((Number) value).doubleValue();
     }
 
-    private Object[] firstAggregate(List<Object[]> results) {
-        return results.isEmpty() ? new Object[] { BigDecimal.ZERO, 0L, 0.0 } : results.get(0);
+    private long longValue(Object value) {
+        return value == null ? 0L : ((Number) value).longValue();
     }
 
     private Long currentCompanyId() {
@@ -169,22 +210,32 @@ public class DashboardController {
 
         DateRange currentRange(LocalDate today) {
             return switch (this) {
-                case WEEKLY -> new DateRange(today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
+                case WEEKLY -> new DateRange(this, today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
                         today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY)));
-                case MONTHLY -> new DateRange(today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()));
-                case YEARLY -> new DateRange(LocalDate.of(today.getYear(), 1, 1), LocalDate.of(today.getYear(), 12, 31));
+                case MONTHLY -> new DateRange(this, today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()));
+                case YEARLY -> new DateRange(this, LocalDate.of(today.getYear(), 1, 1), LocalDate.of(today.getYear(), 12, 31));
             };
         }
 
         DateRange previousRange(DateRange range) {
             return switch (this) {
-                case WEEKLY -> new DateRange(range.start().minusWeeks(1), range.end().minusWeeks(1));
+                case WEEKLY -> new DateRange(this, range.start().minusWeeks(1), range.end().minusWeeks(1));
                 case MONTHLY -> {
                     LocalDate start = range.start().minusMonths(1).withDayOfMonth(1);
-                    yield new DateRange(start, start.withDayOfMonth(start.lengthOfMonth()));
+                    yield new DateRange(this, start, start.withDayOfMonth(start.lengthOfMonth()));
                 }
-                case YEARLY -> new DateRange(range.start().minusYears(1), range.end().minusYears(1));
+                case YEARLY -> new DateRange(this, range.start().minusYears(1), range.end().minusYears(1));
             };
+        }
+
+        List<DateRange> trendRanges(LocalDate today) {
+            List<DateRange> ranges = new ArrayList<>();
+            DateRange range = currentRange(today);
+            for (int index = 0; index < 6; index++) {
+                ranges.add(0, range);
+                range = previousRange(range);
+            }
+            return ranges;
         }
     }
 
@@ -223,6 +274,12 @@ public class DashboardController {
     public record TrendPoint(String label, BigDecimal sales, BigDecimal purchases, BigDecimal net) {
     }
 
-    private record DateRange(LocalDate start, LocalDate end) {
+    private record RawTotals(BigDecimal amount, long count, double quantity) {
+    }
+
+    private record OutstandingTotals(BigDecimal amount, long overdueCount) {
+    }
+
+    private record DateRange(DashboardPeriod period, LocalDate start, LocalDate end) {
     }
 }
