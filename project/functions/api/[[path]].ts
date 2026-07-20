@@ -36,7 +36,7 @@ export const onRequest: PagesFunction<Env> = async ({ request, env, params }) =>
     method: request.method,
     headers,
     body,
-    redirect: 'manual',
+    redirect: 'follow',
   });
 
   const responseHeaders = new Headers(upstream.headers);
