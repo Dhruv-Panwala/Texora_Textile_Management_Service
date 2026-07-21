@@ -18,6 +18,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -67,6 +68,7 @@ public class Sale {
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderColumn(name = "entry_order")
     @JsonManagedReference
     @ToString.Exclude
     private List<TakaEntry> takaEntries = new ArrayList<>();

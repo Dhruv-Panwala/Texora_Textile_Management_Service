@@ -19,6 +19,7 @@ import com.example.TextileManagement.entities.Sale;
 import com.example.TextileManagement.entities.TakaEntry;
 import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.lowagie.text.pdf.PdfReader;
+import com.lowagie.text.pdf.parser.PdfTextExtractor;
 
 @ExtendWith(MockitoExtension.class)
 class PdfDocumentServiceTest {
@@ -65,6 +66,28 @@ class PdfDocumentServiceTest {
         PdfReader reader = new PdfReader(pdf);
         assertEquals(1, reader.getNumberOfPages());
         reader.close();
+    }
+
+    @Test
+    void challanAndBillRenderMetersWithTwoDecimalPlaces() throws Exception {
+        CompanyProfile company = new CompanyProfile();
+        company.setTradeName("Test Company");
+        Sale sale = saleWithTakas(1);
+        sale.getTakaEntries().get(0).setMeters(0.7);
+        sale.setTotalMeters(0.7);
+        when(currentCompanyContext.getCompanyId()).thenReturn(null);
+        when(companyProfileRepository.findFirstByOrderByIdAsc()).thenReturn(Optional.of(company));
+
+        PdfDocumentService service = new PdfDocumentService(companyProfileRepository, currentCompanyContext,
+                org.mockito.Mockito.mock(PrivateObjectStorageService.class));
+
+        PdfReader challanReader = new PdfReader(service.generateChallan(sale));
+        assertEquals(true, new PdfTextExtractor(challanReader).getTextFromPage(1, false).contains("0.70"));
+        challanReader.close();
+
+        PdfReader billReader = new PdfReader(service.generateBill(sale));
+        assertEquals(true, new PdfTextExtractor(billReader).getTextFromPage(1, false).contains("0.70"));
+        billReader.close();
     }
 
     private Sale saleWithTakas(int count) {

@@ -439,7 +439,9 @@ public class PdfDocumentService {
     }
 
     private String money(double value) {
-        return String.format("%.2f", value);
+        return BigDecimal.valueOf(value)
+                .setScale(2, RoundingMode.HALF_UP)
+                .toPlainString();
     }
 
     private String value(String value) {
