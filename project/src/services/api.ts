@@ -127,7 +127,11 @@ export const api = {
   patchBody: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: (path: string) => request<void>(path, { method: 'DELETE' }),
-  logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
+  logout: () => {
+    const response = request<void>('/api/auth/logout', { method: 'POST' });
+    csrfToken = null;
+    return response;
+  },
   getWorkspaces: () => request<WorkspaceSummary[]>('/api/workspaces'),
   getWorkspaceMembers: (workspaceId: number) => request<WorkspaceMember[]>(`/api/workspaces/${workspaceId}/members`),
   inviteWorkspaceMember: (workspaceId: number, email: string, role: Exclude<WorkspaceRole, 'OWNER'>) =>
