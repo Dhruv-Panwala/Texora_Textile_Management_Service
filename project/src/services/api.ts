@@ -6,6 +6,10 @@ export const AUTH_EXPIRED_EVENT = 'textile_auth_expired';
 export const PERMISSION_DENIED_EVENT = 'textile_permission_denied';
 let csrfToken: string | null = null;
 
+type ApiRequestOptions = RequestInit & {
+  includeCompanyId?: boolean;
+};
+
 export function getCompanyId() {
   return localStorage.getItem(COMPANY_KEY);
 }
@@ -56,27 +60,36 @@ async function responseError(response: Response) {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  const method = (options.method || 'GET').toUpperCase();
-  if (!(options.body instanceof FormData)) {
+async function handleForbidden<T>(response: Response): Promise<T> {
+  const message = await responseError(response);
+  if (message === 'Read-only workspace access') {
+    return handlePermissionDenied<T>();
+  }
+  throw new Error(message);
+}
+
+async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const { includeCompanyId = true, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers);
+  const method = (fetchOptions.method || 'GET').toUpperCase();
+  if (!(fetchOptions.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     headers.set('X-CSRF-TOKEN', await getCsrfToken());
   }
   const companyId = getCompanyId();
-  if (companyId) {
+  if (includeCompanyId && companyId) {
     headers.set('X-Company-Id', companyId);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers, credentials: 'include' });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...fetchOptions, headers, credentials: 'include' });
   if (!response.ok) {
     if (response.status === 401 && path === '/api/auth/me') {
       return handleAuthExpired<T>();
     }
     if (response.status === 403) {
-      return handlePermissionDenied<T>();
+      return handleForbidden<T>(response);
     }
     throw new Error(await responseError(response));
   }
@@ -146,7 +159,7 @@ export const api = {
     }),
   removeWorkspaceMember: (workspaceId: number, userId: number) =>
     request<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
-  getCompanyProfiles: () => request<CompanyProfile[]>('/api/company/all'),
+  getCompanyProfiles: () => request<CompanyProfile[]>('/api/company/all', { includeCompanyId: false }),
   createCompanyProfile: (profile: Pick<CompanyProfile, 'tradeName'> & Partial<CompanyProfile>) =>
     request<CompanyProfile>('/api/company', { method: 'POST', body: JSON.stringify(profile) }),
   getCompanyProfile: () => request<CompanyProfile>('/api/company'),
@@ -174,7 +187,7 @@ export const api = {
         return handleAuthExpired<Blob | null>();
       }
       if (response.status === 403) {
-        return handlePermissionDenied<Blob | null>();
+        return handleForbidden<Blob | null>(response);
       }
       throw new Error(await responseError(response));
     }
@@ -193,7 +206,7 @@ export const api = {
         return handleAuthExpired<void>();
       }
       if (response.status === 403) {
-        return handlePermissionDenied<void>();
+        return handleForbidden<void>(response);
       }
       throw new Error(await responseError(response));
     }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import { Download, Pencil, Plus, Trash } from 'lucide-react';
 import { api } from '../services/api';
@@ -24,6 +24,8 @@ function Purchases() {
   const [editingPurchase, setEditingPurchase] = useState(emptyPurchase);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +53,11 @@ function Purchases() {
 
   const handleNewPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
     setError('');
     try {
       await api.post<Purchase>('/api/purchases', purchasePayload(newPurchase));
@@ -59,6 +66,9 @@ function Purchases() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save purchase');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -76,9 +86,11 @@ function Purchases() {
 
   const handleEditPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingPurchaseId == null) {
+    if (editingPurchaseId == null || savingRef.current) {
       return;
     }
+    savingRef.current = true;
+    setSaving(true);
     setError('');
     try {
       await api.put<Purchase>(`/api/purchases/${editingPurchaseId}`, purchasePayload(editingPurchase));
@@ -87,6 +99,9 @@ function Purchases() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update purchase');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -169,8 +184,8 @@ function Purchases() {
         <form onSubmit={handleNewPurchase} className="form-surface space-y-4">
           {purchaseForm(newPurchase, setNewPurchase, purchaseTotal)}
           <div className="flex gap-2">
-            <button className="btn-primary">Save Purchase</button>
-            <button type="button" className="btn-secondary" onClick={() => setIsAdding(false)}>Cancel</button>
+            <button disabled={saving} className="btn-primary disabled:opacity-60">{saving ? 'Saving...' : 'Save Purchase'}</button>
+            <button type="button" disabled={saving} className="btn-secondary disabled:opacity-60" onClick={() => setIsAdding(false)}>Cancel</button>
           </div>
         </form>
       )}
@@ -179,8 +194,8 @@ function Purchases() {
         <form onSubmit={handleEditPurchase} className="form-surface space-y-4">
           {purchaseForm(editingPurchase, setEditingPurchase, editPurchaseTotal)}
           <div className="flex gap-2">
-            <button className="btn-primary">Update Purchase</button>
-            <button type="button" className="btn-secondary" onClick={() => setEditingPurchaseId(null)}>Cancel</button>
+            <button disabled={saving} className="btn-primary disabled:opacity-60">{saving ? 'Saving...' : 'Update Purchase'}</button>
+            <button type="button" disabled={saving} className="btn-secondary disabled:opacity-60" onClick={() => setEditingPurchaseId(null)}>Cancel</button>
           </div>
         </form>
       )}

@@ -44,6 +44,29 @@ class PdfDocumentServiceTest {
         reader.close();
     }
 
+    @Test
+    void challanWithFortyEightTakasFitsOnOnePage() throws Exception {
+        CompanyProfile company = new CompanyProfile();
+        company.setTradeName("Test Company Textile Private Limited");
+        company.setGstNo("24ABCDE1234F1Z5");
+        company.setPhone("+91 95121 51000");
+        company.setAddress("101, Textile Market, Ring Road, Surat - 395002");
+        Sale sale = saleWithTakas(48);
+        sale.getCustomer().setName("Shree Textile Trading Company");
+        sale.getCustomer().setAddress("204, New Textile Market, Ring Road, Surat - 395002");
+        sale.setBrokerName("Devashish Textile Brokers");
+        sale.setQuality("ARTSILK CLOTH - PREMIUM QUALITY");
+        when(currentCompanyContext.getCompanyId()).thenReturn(null);
+        when(companyProfileRepository.findFirstByOrderByIdAsc()).thenReturn(Optional.of(company));
+
+        byte[] pdf = new PdfDocumentService(companyProfileRepository, currentCompanyContext,
+                org.mockito.Mockito.mock(PrivateObjectStorageService.class)).generateChallan(sale);
+
+        PdfReader reader = new PdfReader(pdf);
+        assertEquals(1, reader.getNumberOfPages());
+        reader.close();
+    }
+
     private Sale saleWithTakas(int count) {
         Customer customer = new Customer();
         customer.setName("Customer");

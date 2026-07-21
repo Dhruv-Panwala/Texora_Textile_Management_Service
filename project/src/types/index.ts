@@ -79,6 +79,7 @@ export interface Sale {
   quality: string;
   challanNo: number;
   challanCount?: number;
+  balanceChallanColumnsByMeters?: boolean;
   billNo?: number;
   financialYear: string;
   dueDate: string;

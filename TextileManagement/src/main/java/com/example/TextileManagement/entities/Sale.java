@@ -49,6 +49,7 @@ public class Sale {
     private String quality;
     private Integer challanNo;
     private Integer challanCount;
+    private boolean balanceChallanColumnsByMeters;
     private Integer billNo;
     private String financialYear;
     private LocalDate dueDate;

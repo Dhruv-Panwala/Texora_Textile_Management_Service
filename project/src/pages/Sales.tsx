@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileText, Minus, Pencil, Plus, Trash } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../services/api';
@@ -17,6 +17,7 @@ const emptySale = {
   quality: '',
   challanNo: '',
   billNo: '',
+  balanceChallanColumnsByMeters: false,
   rate: '',
   takaEntries: [{ takaNo: '', meters: '' }] as TakaDraft[],
 };
@@ -31,6 +32,9 @@ function Sales() {
   const [editingSale, setEditingSale] = useState(emptySale);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [downloading, setDownloading] = useState('');
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -59,12 +63,18 @@ function Sales() {
     quality: sale.quality,
     challanNo: sale.challanNo ? Number(sale.challanNo) : null,
     billNo: sale.billNo ? Number(sale.billNo) : null,
+    balanceChallanColumnsByMeters: sale.balanceChallanColumnsByMeters,
     rate: Number(sale.rate),
     takaEntries: sale.takaEntries.map((t) => ({ takaNo: Number(t.takaNo), meters: Number(t.meters) })),
   });
 
   const handleNewSale = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
+    setSaving(true);
     setError('');
     try {
       await api.post<Sale>('/api/sales', salePayload(newSale));
@@ -73,6 +83,9 @@ function Sales() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save sale');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -85,6 +98,7 @@ function Sales() {
       quality: sale.quality || '',
       challanNo: sale.challanNo ? String(sale.challanNo) : '',
       billNo: sale.billNo ? String(sale.billNo) : '',
+      balanceChallanColumnsByMeters: sale.balanceChallanColumnsByMeters || false,
       rate: String(sale.rate || ''),
       takaEntries: sale.takaEntries?.length
         ? sale.takaEntries.map((taka) => ({ takaNo: String(taka.takaNo || ''), meters: String(taka.meters || '') }))
@@ -94,9 +108,11 @@ function Sales() {
 
   const handleEditSale = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingSaleId == null) {
+    if (editingSaleId == null || savingRef.current) {
       return;
     }
+    savingRef.current = true;
+    setSaving(true);
     setError('');
     try {
       await api.put<Sale>(`/api/sales/${editingSaleId}`, salePayload(editingSale));
@@ -105,6 +121,9 @@ function Sales() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update sale');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -150,10 +169,20 @@ function Sales() {
     addTakaField(sale, setSale);
   };
 
-  const download = (sale: Sale, type: 'challan' | 'bill') => {
+  const download = async (sale: Sale, type: 'challan' | 'bill') => {
     const datePart = format(new Date(sale.saleDate), 'dd-MM-yy');
     const numberPart = type === 'challan' ? sale.challanNo : (sale.billNo || sale.challanNo);
-    api.download(`/api/sales/${sale.id}/${type}.pdf`, `${type}-${datePart}-${numberPart}.pdf`);
+    const downloadKey = `${sale.id}-${type}`;
+    setError('');
+    setDownloading(downloadKey);
+    try {
+      await api.download(`/api/sales/${sale.id}/${type}.pdf`, `${type}-${datePart}-${numberPart}.pdf`);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : '';
+      setError(reason ? `Could not download the ${type}: ${reason}` : `Could not generate the ${type}. Please try again.`);
+    } finally {
+      setDownloading('');
+    }
   };
 
   const exportCsv = () => downloadCsv('sales.csv', sales, [
@@ -198,6 +227,11 @@ function Sales() {
         <input type="number" step="0.01" min="0.01" className="border rounded-md px-3 py-2" placeholder="Rate per meter" value={sale.rate} onChange={(e) => setSale({ ...sale, rate: e.target.value })} required />
         <div className="text-sm text-gray-700 flex items-center">Total: {meters.toFixed(2)} m / Rs {amount.toFixed(2)}</div>
       </div>
+
+      <label className="flex items-start gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700">
+        <input type="checkbox" className="mt-1 h-4 w-4" checked={sale.balanceChallanColumnsByMeters} onChange={(e) => setSale({ ...sale, balanceChallanColumnsByMeters: e.target.checked })} />
+        <span><span className="font-semibold text-stone-900">Balance challan columns near 1,200 meters</span><span className="mt-1 block text-stone-500">Off keeps 12 takas in each column. On starts the next column when the current column is closest to 1,200 meters, leaving the remaining rows blank.</span></span>
+      </label>
 
       <div className="space-y-2">
         <div className="font-semibold text-gray-700">Taka Entries</div>
@@ -248,8 +282,8 @@ function Sales() {
         <form onSubmit={handleNewSale} onKeyDown={(e) => handleSaleKeyDown(e, newSale, setNewSale)} className="form-surface space-y-4">
           {saleForm(newSale, setNewSale, totalMeters, totalAmount)}
           <div className="flex gap-2">
-            <button className="btn-primary">Save Sale</button>
-            <button type="button" className="btn-secondary" onClick={() => setIsAddingNewSale(false)}>Cancel</button>
+            <button disabled={saving} className="btn-primary disabled:opacity-60">{saving ? 'Saving...' : 'Save Sale'}</button>
+            <button type="button" disabled={saving} className="btn-secondary disabled:opacity-60" onClick={() => setIsAddingNewSale(false)}>Cancel</button>
           </div>
         </form>
       )}
@@ -258,8 +292,8 @@ function Sales() {
         <form onSubmit={handleEditSale} onKeyDown={(e) => handleSaleKeyDown(e, editingSale, setEditingSale)} className="form-surface space-y-4">
           {saleForm(editingSale, setEditingSale, editTotalMeters, editTotalAmount)}
           <div className="flex gap-2">
-            <button className="btn-primary">Update Sale</button>
-            <button type="button" className="btn-secondary" onClick={() => setEditingSaleId(null)}>Cancel</button>
+            <button disabled={saving} className="btn-primary disabled:opacity-60">{saving ? 'Saving...' : 'Update Sale'}</button>
+            <button type="button" disabled={saving} className="btn-secondary disabled:opacity-60" onClick={() => setEditingSaleId(null)}>Cancel</button>
           </div>
         </form>
       )}
@@ -287,8 +321,8 @@ function Sales() {
                   <td className="!pr-4 sm:!pr-6">
                     <div className="flex flex-wrap gap-2">
                     <button title="Edit sale" onClick={() => startEdit(sale)} className="text-blue-600 hover:text-blue-800"><Pencil className="w-5 h-5" /></button>
-                    <button title="Download challan" onClick={() => download(sale, 'challan')} className="text-blue-700 hover:text-blue-900"><Download className="w-5 h-5" /></button>
-                    <button title="Download bill" onClick={() => download(sale, 'bill')} className="text-green-700 hover:text-green-900"><FileText className="w-5 h-5" /></button>
+                    <button title="Download challan" disabled={downloading === `${sale.id}-challan`} onClick={() => void download(sale, 'challan')} className="text-blue-700 hover:text-blue-900 disabled:opacity-40"><Download className="w-5 h-5" /></button>
+                    <button title="Download bill" disabled={downloading === `${sale.id}-bill`} onClick={() => void download(sale, 'bill')} className="text-green-700 hover:text-green-900 disabled:opacity-40"><FileText className="w-5 h-5" /></button>
                     <button title="Delete sale" onClick={() => remove(sale)} className="text-red-600 hover:text-red-800"><Trash className="w-5 h-5" /></button>
                     </div>
                   </td>

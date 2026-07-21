@@ -5,7 +5,6 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.core.io.ClassPathResource;
@@ -38,8 +37,7 @@ public class PdfDocumentService {
     private static final DateTimeFormatter FILE_DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yy");
     private static final int CHALLAN_COLUMNS = 4;
     private static final int CHALLAN_ROWS = 12;
-    private static final int MAX_TAKAS_PER_CHALLAN = CHALLAN_COLUMNS * CHALLAN_ROWS;
-    private static final float CHALLAN_ROW_HEIGHT = 24f;
+    private static final float CHALLAN_ROW_HEIGHT = 21f;
 
     private final CompanyProfileRepository companyProfileRepository;
     private final CurrentCompanyContext currentCompanyContext;
@@ -56,12 +54,13 @@ public class PdfDocumentService {
     public byte[] generateChallan(Sale sale) {
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            Document document = new Document(PageSize.A4, 24, 24, 20, 20);
+            Document document = new Document(PageSize.A4, 24, 24, 20, 14);
             PdfWriter.getInstance(document, output);
             document.open();
 
             CompanyProfile company = company();
-            List<List<TakaEntry>> challanGroups = splitTakas(sale.getTakaEntries());
+            List<ChallanLayoutPlanner.ChallanPage> challanGroups = ChallanLayoutPlanner.plan(
+                    sale.getTakaEntries(), sale.isBalanceChallanColumnsByMeters());
             for (int index = 0; index < challanGroups.size(); index++) {
                 if (index > 0) {
                     document.newPage();
@@ -71,7 +70,7 @@ public class PdfDocumentService {
                 addCentered(document, value(company.getAddress()), bold(11), 10);
                 addChallanInfo(document, sale, index, challanGroups.size());
                 addTakaTable(document, challanGroups.get(index));
-                addChallanTotals(document, challanGroups.get(index));
+                addChallanTotals(document, challanGroups.get(index).entries());
                 addChallanFooter(document);
             }
 
@@ -154,34 +153,16 @@ public class PdfDocumentService {
             addInfoRow(table, "Bill No: " + value(String.valueOf(sale.getBillNo())), "Page " + (challanIndex + 1) + " of " + totalChallans);
         }
         document.add(table);
-        document.add(spacer(14));
+        document.add(spacer(4));
     }
 
-    private void addTakaTable(Document document, List<TakaEntry> entries) throws Exception {
-        List<TakaEntry> takas = entries == null ? List.of() : entries;
-        List<List<String>> cols = new ArrayList<>();
-        for (int i = 0; i < CHALLAN_COLUMNS * 3; i++) {
-            cols.add(new ArrayList<>());
-        }
+    private void addTakaTable(Document document, ChallanLayoutPlanner.ChallanPage challanPage) throws Exception {
         double[] groupTotals = new double[CHALLAN_COLUMNS];
-
-        for (int i = 0; i < MAX_TAKAS_PER_CHALLAN; i++) {
-            int group = i / CHALLAN_ROWS;
-            cols.get(group * 3).add(String.valueOf(i + 1));
+        for (int group = 0; group < CHALLAN_COLUMNS; group++) {
+            groupTotals[group] = challanPage.columns().get(group).stream()
+                    .mapToDouble(taka -> safe(taka.getMeters()))
+                    .sum();
         }
-        for (int i = 0; i < takas.size(); i++) {
-            int group = i / CHALLAN_ROWS;
-            TakaEntry taka = takas.get(i);
-            cols.get(group * 3 + 1).add(String.valueOf(taka.getTakaNo()));
-            cols.get(group * 3 + 2).add(money(taka.getMeters()));
-            groupTotals[group] += safe(taka.getMeters());
-        }
-        for (List<String> col : cols) {
-            while (col.size() < CHALLAN_ROWS) {
-                col.add("");
-            }
-        }
-
         PdfPTable table = new PdfPTable(CHALLAN_COLUMNS * 3);
         table.setWidthPercentage(100);
         table.setWidths(new float[] { 30, 55, 60, 30, 55, 60, 30, 55, 60, 30, 55, 60 });
@@ -191,8 +172,12 @@ public class PdfDocumentService {
             table.addCell(headerCell("Meters"));
         }
         for (int row = 0; row < CHALLAN_ROWS; row++) {
-            for (int col = 0; col < CHALLAN_COLUMNS * 3; col++) {
-                table.addCell(fixedGridCell(cols.get(col).get(row), regular(11), Element.ALIGN_CENTER, Color.WHITE));
+            for (int group = 0; group < CHALLAN_COLUMNS; group++) {
+                List<TakaEntry> column = challanPage.columns().get(group);
+                TakaEntry taka = row < column.size() ? column.get(row) : null;
+                table.addCell(fixedGridCell(String.valueOf(group * CHALLAN_ROWS + row + 1), regular(11), Element.ALIGN_CENTER, Color.WHITE));
+                table.addCell(fixedGridCell(taka == null ? "" : String.valueOf(taka.getTakaNo()), regular(11), Element.ALIGN_CENTER, Color.WHITE));
+                table.addCell(fixedGridCell(taka == null ? "" : money(taka.getMeters()), regular(11), Element.ALIGN_CENTER, Color.WHITE));
             }
         }
         for (int g = 0; g < CHALLAN_COLUMNS; g++) {
@@ -202,7 +187,7 @@ public class PdfDocumentService {
             table.addCell(gridCell(money(groupTotals[g]), bold(11), Element.ALIGN_CENTER, LIGHT_GOLD));
         }
         document.add(table);
-        document.add(spacer(12));
+        document.add(spacer(4));
     }
 
     private void addChallanTotals(Document document, List<TakaEntry> entries) throws Exception {
@@ -214,18 +199,18 @@ public class PdfDocumentService {
         table.addCell(borderless("Total Meters", bold(11), Element.ALIGN_LEFT));
         table.addCell(borderless(money(totalMeters), bold(11), Element.ALIGN_LEFT));
         document.add(table);
-        document.add(spacer(18));
+        document.add(spacer(6));
     }
 
     private void addChallanFooter(Document document) throws Exception {
         PdfPTable table = new PdfPTable(new float[] { 120, 140, 120, 140 });
         table.setWidthPercentage(92);
-        table.addCell(borderless("Prepared By", bold(12), Element.ALIGN_LEFT));
-        table.addCell(borderless("", bold(12), Element.ALIGN_LEFT));
-        table.addCell(borderless("Received By", bold(12), Element.ALIGN_LEFT));
-        table.addCell(borderless("", bold(12), Element.ALIGN_LEFT));
+        table.addCell(borderless("Prepared By", bold(11), Element.ALIGN_LEFT));
+        table.addCell(borderless("", bold(11), Element.ALIGN_LEFT));
+        table.addCell(borderless("Received By", bold(11), Element.ALIGN_LEFT));
+        table.addCell(borderless("", bold(11), Element.ALIGN_LEFT));
         document.add(table);
-        addLeft(document, "Subject to Surat Jurisdiction", regular(9, Color.GRAY), 0);
+        addLeft(document, "Subject to Surat Jurisdiction", regular(8, Color.GRAY), 0);
     }
 
     private void addBillInfo(Document document, Sale sale) throws Exception {
@@ -308,8 +293,12 @@ public class PdfDocumentService {
     }
 
     private void addInfoRow(PdfPTable table, String left, String right) {
-        table.addCell(gridCell(left, bold(13), Element.ALIGN_LEFT, Color.WHITE));
-        table.addCell(gridCell(right, bold(right.matches("\\d+") ? 18 : 13), Element.ALIGN_CENTER, Color.WHITE));
+        PdfPCell leftCell = gridCell(left, bold(13), Element.ALIGN_LEFT, Color.WHITE);
+        leftCell.setPadding(3);
+        table.addCell(leftCell);
+        PdfPCell rightCell = gridCell(right, bold(right.matches("\\d+") ? 18 : 13), Element.ALIGN_CENTER, Color.WHITE);
+        rightCell.setPadding(3);
+        table.addCell(rightCell);
     }
 
     private PdfPCell headerCell(String text) {
@@ -463,19 +452,6 @@ public class PdfDocumentService {
                 ? challanDownloadLabel(sale)
                 : String.valueOf(sale.getBillNo() == null ? sale.getChallanNo() : sale.getBillNo());
         return type + "-" + date + "-" + number + ".pdf";
-    }
-
-    private List<List<TakaEntry>> splitTakas(List<TakaEntry> entries) {
-        List<TakaEntry> takas = entries == null ? List.of() : entries;
-        if (takas.isEmpty()) {
-            return List.of(List.of());
-        }
-        List<List<TakaEntry>> chunks = new ArrayList<>();
-        for (int start = 0; start < takas.size(); start += MAX_TAKAS_PER_CHALLAN) {
-            int end = Math.min(start + MAX_TAKAS_PER_CHALLAN, takas.size());
-            chunks.add(new ArrayList<>(takas.subList(start, end)));
-        }
-        return chunks;
     }
 
     private int challanNumberForSegment(Sale sale, int segmentIndex) {

@@ -11,8 +11,22 @@ function Payments() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [activePayment, setActivePayment] = useState<Payment | null>(null);
   const [paymentDetails, setPaymentDetails] = useState<PaymentUpdate>(emptyPayment);
-  const load = async () => setPayments(await api.get<Payment[]>('/api/payments'));
-  useEffect(() => { load(); }, []);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setPayments(await api.get<Payment[]>('/api/payments'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load payments');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void load(); }, []);
 
   const openPaymentForm = (payment: Payment) => {
     setActivePayment(payment);
@@ -24,13 +38,21 @@ function Payments() {
     if (!activePayment) {
       return;
     }
-    await api.patchBody(
-      activePayment.type === 'TO_SUPPLIER' ? `/api/purchases/${activePayment.sourceId}/paid` : `/api/sales/${activePayment.sourceId}/paid`,
-      paymentDetails,
-    );
-    setActivePayment(null);
-    setPaymentDetails(emptyPayment);
-    await load();
+    setSaving(true);
+    setError('');
+    try {
+      await api.patchBody(
+        activePayment.type === 'TO_SUPPLIER' ? `/api/purchases/${activePayment.sourceId}/paid` : `/api/sales/${activePayment.sourceId}/paid`,
+        paymentDetails,
+      );
+      setActivePayment(null);
+      setPaymentDetails(emptyPayment);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update this payment');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const exportCsv = () => downloadCsv('payments.csv', payments, [
@@ -85,6 +107,8 @@ function Payments() {
           <Download className="w-5 h-5" /> Export CSV
         </button>
       </div>
+      {error && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      {loading && <p className="text-sm text-stone-500">Loading payments...</p>}
       {activePayment && (
         <form onSubmit={markPaid} className="form-surface space-y-4">
           <div className="font-semibold text-gray-900">
@@ -102,8 +126,8 @@ function Payments() {
             )}
           </div>
           <div className="flex gap-2">
-            <button className="btn-primary">Save Payment</button>
-            <button type="button" className="btn-secondary" onClick={() => setActivePayment(null)}>Cancel</button>
+            <button disabled={saving} className="btn-primary disabled:opacity-60">{saving ? 'Saving...' : 'Save Payment'}</button>
+            <button type="button" disabled={saving} className="btn-secondary disabled:opacity-60" onClick={() => setActivePayment(null)}>Cancel</button>
           </div>
         </form>
       )}

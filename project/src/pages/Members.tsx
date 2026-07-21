@@ -79,6 +79,16 @@ function Members() {
     ? `${window.location.origin}/accept-invitation?token=${encodeURIComponent(invitation.token)}`
     : '';
 
+  const copyInvitationLink = async () => {
+    setError('');
+    try {
+      await navigator.clipboard.writeText(invitationLink);
+      setMessage('Invitation link copied.');
+    } catch {
+      setError('Could not copy the invitation link. Select and copy it manually.');
+    }
+  };
+
   if (loading) return <div className="text-gray-600">Loading workspace members...</div>;
 
   return (
@@ -105,7 +115,7 @@ function Members() {
         </form>
       )}
 
-      {invitation && <div className="form-surface max-w-4xl"><div className="text-sm font-semibold text-stone-700">Invitation link</div><div className="mt-2 flex gap-2"><input readOnly className="min-w-0 flex-1 border rounded-md px-3 py-2 text-sm" value={invitationLink} /><button type="button" className="btn-secondary" onClick={() => navigator.clipboard.writeText(invitationLink)}><Copy className="h-4 w-4" /> Copy</button></div><p className="mt-2 text-xs text-stone-500">This link expires in 7 days.</p></div>}
+      {invitation && <div className="form-surface max-w-4xl"><div className="text-sm font-semibold text-stone-700">Invitation link</div><div className="mt-2 flex gap-2"><input readOnly className="min-w-0 flex-1 border rounded-md px-3 py-2 text-sm" value={invitationLink} /><button type="button" className="btn-secondary" onClick={() => void copyInvitationLink()}><Copy className="h-4 w-4" /> Copy</button></div><p className="mt-2 text-xs text-stone-500">This link expires in 7 days.</p></div>}
 
       <div className="form-surface max-w-4xl">
         <h2 className="text-lg font-bold text-stone-900">Role access</h2>

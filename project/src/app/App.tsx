@@ -26,6 +26,7 @@ function App() {
   const [activeCompanyId, setActiveCompanyId] = useState<string>(getCompanyId() || '');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState('');
+  const [workspaceError, setWorkspaceError] = useState('');
 
   useEffect(() => {
     const handleAuthExpired = () => {
@@ -33,6 +34,7 @@ function App() {
       setCompanies([]);
       setActiveCompanyId('');
       setAuthenticated(false);
+      setWorkspaceError('');
     };
     const handlePermissionDenied = () => {
       setPermissionMessage('You do not have permission to perform this action. Your current role is read-only.');
@@ -60,6 +62,7 @@ function App() {
           setCompanies([]);
           setActiveCompanyId('');
           setAuthenticated(false);
+          setWorkspaceError('');
           setAuthReady(true);
         }
       });
@@ -92,6 +95,11 @@ function App() {
         clearCompanyId();
       }
       setActiveCompanyId(fallbackId);
+      setWorkspaceError('');
+    }).catch((err) => {
+      if (!cancelled) {
+        setWorkspaceError(err instanceof Error ? err.message : 'Could not load your companies. Please refresh the page.');
+      }
     });
 
     return () => {
@@ -105,6 +113,7 @@ function App() {
     setCompanies([]);
     setActiveCompanyId('');
     setAuthenticated(false);
+    setWorkspaceError('');
     setMobileNavOpen(false);
   };
 
@@ -179,6 +188,7 @@ function App() {
 
             <main key={activeCompanyId || 'default'} className="mobile-safe px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
               {permissionMessage && <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900"><span>{permissionMessage}</span><button type="button" className="text-amber-700 underline" onClick={() => setPermissionMessage('')}>Dismiss</button></div>}
+              {workspaceError && <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"><span>{workspaceError}</span><button type="button" className="text-red-700 underline" onClick={() => setWorkspaceError('')}>Dismiss</button></div>}
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/purchases" element={<Purchases />} />

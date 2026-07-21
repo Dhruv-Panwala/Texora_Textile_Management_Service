@@ -26,7 +26,6 @@ import com.example.TextileManagement.entities.TakaEntry;
 
 @Service
 public class SaleService {
-    private static final int MAX_TAKAS_PER_CHALLAN = 48;
     private final SaleRepository saleRepository;
     private final CustomerRepository customerRepository;
     private final CompanyProfileRepository companyProfileRepository;
@@ -82,6 +81,7 @@ public class SaleService {
         existingSale.setQuality(updatedSale.getQuality());
         existingSale.setSaleDate(updatedSale.getSaleDate());
         existingSale.setChallanNo(updatedSale.getChallanNo());
+        existingSale.setBalanceChallanColumnsByMeters(updatedSale.isBalanceChallanColumnsByMeters());
         existingSale.setBillNo(updatedSale.getBillNo());
         existingSale.setRate(updatedSale.getRate());
         existingSale.getTakaEntries().clear();
@@ -164,7 +164,7 @@ public class SaleService {
 
         String financialYear = getFinancialYearFromDate(sale.getSaleDate());
         sale.setFinancialYear(financialYear);
-        int challanCount = Math.max(1, (int) Math.ceil(takaEntries.size() / (double) MAX_TAKAS_PER_CHALLAN));
+        int challanCount = ChallanLayoutPlanner.pageCount(takaEntries, sale.isBalanceChallanColumnsByMeters());
         sale.setChallanCount(challanCount);
         if (sale.getChallanNo() != null && sale.getChallanNo() <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Challan number must be greater than zero");

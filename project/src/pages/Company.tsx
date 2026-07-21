@@ -21,12 +21,14 @@ function Company() {
   const [logoPreviewUrl, setLogoPreviewUrl] = useState('');
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoSaving, setLogoSaving] = useState(false);
+  const [logoError, setLogoError] = useState('');
 
   const load = async () => {
     setLoading(true);
     setError('');
+    setLogoError('');
     try {
-      const [data, logo] = await Promise.all([api.getCompanyProfile(), api.getCompanyLogo()]);
+      const data = await api.getCompanyProfile();
       setProfile({
         tradeName: data.tradeName || '',
         gstNo: data.gstNo || '',
@@ -36,7 +38,13 @@ function Company() {
         defaultQuality: data.defaultQuality || '',
       });
       setLogoFile(null);
-      setLogoPreviewUrl(logo ? URL.createObjectURL(logo) : '');
+      try {
+        const logo = await api.getCompanyLogo();
+        setLogoPreviewUrl(logo ? URL.createObjectURL(logo) : '');
+      } catch {
+        setLogoPreviewUrl('');
+        setLogoError('Company details loaded, but the logo could not be loaded. Re-upload or remove the logo before downloading bills or challans.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load company profile');
     } finally {
@@ -63,6 +71,7 @@ function Company() {
       return;
     }
     setError('');
+    setLogoError('');
     setLogoFile(file);
     setLogoPreviewUrl(URL.createObjectURL(file));
   };
@@ -77,6 +86,7 @@ function Company() {
     try {
       await api.uploadCompanyLogo(logoFile);
       setLogoFile(null);
+      await load();
       setMessage('Logo updated');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload logo');
@@ -93,6 +103,7 @@ function Company() {
       await api.deleteCompanyLogo();
       setLogoFile(null);
       setLogoPreviewUrl('');
+      setLogoError('');
       setMessage('Logo removed; the default logo will be used.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove logo');
@@ -196,6 +207,7 @@ function Company() {
           <h2 className="text-lg font-bold text-stone-900">Bill & Challan Logo</h2>
           <p className="text-sm text-stone-500">PNG or JPEG, up to 1 MB and 2000 x 2000 px. The PDF keeps the full logo inside the exact 72 x 72 pt header area.</p>
         </div>
+        {logoError && <div role="alert" className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">{logoError}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           {['Bill preview', 'Challan preview'].map((label) => (
             <div key={label}>
