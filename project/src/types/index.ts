@@ -94,6 +94,10 @@ export interface Sale {
   createdAt?: string;
 }
 
+export type SaleListItem = Omit<Sale, 'takaEntries' | 'customer'> & {
+  customer: Pick<Customer, 'id' | 'name'> & { brokerName?: string };
+};
+
 export interface Purchase {
   id: number;
   purchaseDate: string;

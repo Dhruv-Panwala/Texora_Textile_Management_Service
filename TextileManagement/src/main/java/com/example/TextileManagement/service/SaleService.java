@@ -23,6 +23,7 @@ import com.example.TextileManagement.entities.Customer;
 import com.example.TextileManagement.entities.PaymentUpdate;
 import com.example.TextileManagement.entities.Sale;
 import com.example.TextileManagement.entities.TakaEntry;
+import com.example.TextileManagement.dto.SaleListItem;
 
 @Service
 public class SaleService {
@@ -54,10 +55,11 @@ public class SaleService {
         return saleRepository.findAllByCompany_Id(currentCompanyId());
     }
 
-    public Page<Sale> getSalesPage(int page, int size) {
-        return saleRepository.findAllByCompany_Id(currentCompanyId(),
+    public Page<SaleListItem> getSalesPage(int page, int size) {
+        return saleRepository.findPageForList(currentCompanyId(),
                 PageRequest.of(Math.max(0, page), Math.min(Math.max(size, 1), 100),
-                        Sort.by("saleDate").descending()));
+                        Sort.by("saleDate").descending()))
+                .map(SaleListItem::from);
     }
 
     public Sale getSale(Long id) {

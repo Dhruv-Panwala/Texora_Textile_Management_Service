@@ -3,7 +3,7 @@ import { Download, FileText, Minus, Pencil, Plus, Trash } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
-import { Customer, PageResult, Sale } from '../types';
+import { Customer, PageResult, Sale, SaleListItem } from '../types';
 
 interface TakaDraft {
   takaNo: string;
@@ -24,7 +24,7 @@ const emptySale = {
 
 function Sales() {
   const [error, setError] = useState('');
-  const [sales, setSales] = useState<Sale[]>([]);
+  const [sales, setSales] = useState<SaleListItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [isAddingNewSale, setIsAddingNewSale] = useState(false);
   const [newSale, setNewSale] = useState(emptySale);
@@ -36,20 +36,29 @@ function Sales() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const loadSales = useCallback(async () => {
     try {
-      const [salesPage, customersPage] = await Promise.all([
-        api.get<PageResult<Sale>>(`/api/sales?page=${page}&size=25`),
-        api.get<PageResult<Customer>>('/api/customers?page=0&size=100'),
-      ]);
+      const salesPage = await api.get<PageResult<SaleListItem>>(`/api/sales?page=${page}&size=25`);
       setSales(salesPage.content);
       setTotalPages(salesPage.totalPages);
-      setCustomers(customersPage.content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load sales');
     }
   }, [page]);
-  useEffect(() => { load(); }, [load]);
+
+  const loadCustomers = useCallback(async () => {
+    try {
+      const customersPage = await api.get<PageResult<Customer>>('/api/customers?page=0&size=100');
+      setCustomers(customersPage.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load customers');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSales();
+    void loadCustomers();
+  }, [loadCustomers, loadSales]);
 
   const totalMeters = useMemo(() => newSale.takaEntries.reduce((sum, t) => sum + Number(t.meters || 0), 0), [newSale.takaEntries]);
   const totalAmount = totalMeters * Number(newSale.rate || 0);
@@ -77,10 +86,13 @@ function Sales() {
     setSaving(true);
     setError('');
     try {
-      await api.post<Sale>('/api/sales', salePayload(newSale));
+      const createdSale = await api.post<Sale>('/api/sales', salePayload(newSale));
+      setSales((current) => page === 0
+        ? [createdSale, ...current.filter((sale) => sale.id !== createdSale.id)].slice(0, 25)
+        : current);
       setIsAddingNewSale(false);
       setNewSale(emptySale);
-      await load();
+      void loadSales();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save sale');
     } finally {
@@ -89,21 +101,26 @@ function Sales() {
     }
   };
 
-  const startEdit = (sale: Sale) => {
-    setEditingSaleId(sale.id);
-    setEditingSale({
-      saleDate: sale.saleDate,
-      customerId: String(sale.customer?.id || ''),
-      brokerName: sale.brokerName || '',
-      quality: sale.quality || '',
-      challanNo: sale.challanNo ? String(sale.challanNo) : '',
-      billNo: sale.billNo ? String(sale.billNo) : '',
-      balanceChallanColumnsByMeters: sale.balanceChallanColumnsByMeters || false,
-      rate: String(sale.rate || ''),
-      takaEntries: sale.takaEntries?.length
-        ? sale.takaEntries.map((taka) => ({ takaNo: String(taka.takaNo || ''), meters: String(taka.meters || '') }))
-        : [{ takaNo: '', meters: '' }],
-    });
+  const startEdit = async (sale: SaleListItem) => {
+    try {
+      const fullSale = await api.get<Sale>(`/api/sales/${sale.id}`);
+      setEditingSaleId(fullSale.id);
+      setEditingSale({
+        saleDate: fullSale.saleDate,
+        customerId: String(fullSale.customer?.id || ''),
+        brokerName: fullSale.brokerName || '',
+        quality: fullSale.quality || '',
+        challanNo: fullSale.challanNo ? String(fullSale.challanNo) : '',
+        billNo: fullSale.billNo ? String(fullSale.billNo) : '',
+        balanceChallanColumnsByMeters: fullSale.balanceChallanColumnsByMeters || false,
+        rate: String(fullSale.rate || ''),
+        takaEntries: fullSale.takaEntries?.length
+          ? fullSale.takaEntries.map((taka) => ({ takaNo: String(taka.takaNo || ''), meters: String(taka.meters || '') }))
+          : [{ takaNo: '', meters: '' }],
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load sale details');
+    }
   };
 
   const handleEditSale = async (e: React.FormEvent) => {
@@ -115,10 +132,11 @@ function Sales() {
     setSaving(true);
     setError('');
     try {
-      await api.put<Sale>(`/api/sales/${editingSaleId}`, salePayload(editingSale));
+      const updatedSale = await api.put<Sale>(`/api/sales/${editingSaleId}`, salePayload(editingSale));
+      setSales((current) => current.map((sale) => sale.id === updatedSale.id ? updatedSale : sale));
       setEditingSaleId(null);
       setEditingSale(emptySale);
-      await load();
+      void loadSales();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update sale');
     } finally {
@@ -127,14 +145,15 @@ function Sales() {
     }
   };
 
-  const remove = async (sale: Sale) => {
+  const remove = async (sale: SaleListItem) => {
     if (!confirmDelete(`sale challan ${sale.challanNo}`)) {
       return;
     }
     setError('');
     try {
       await api.delete(`/api/sales/${sale.id}`);
-      await load();
+      setSales((current) => current.filter((currentSale) => currentSale.id !== sale.id));
+      void loadSales();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete sale');
     }
@@ -169,7 +188,7 @@ function Sales() {
     addTakaField(sale, setSale);
   };
 
-  const download = async (sale: Sale, type: 'challan' | 'bill') => {
+  const download = async (sale: SaleListItem, type: 'challan' | 'bill') => {
     const datePart = format(new Date(sale.saleDate), 'dd-MM-yy');
     const numberPart = type === 'challan' ? sale.challanNo : (sale.billNo || sale.challanNo);
     const downloadKey = `${sale.id}-${type}`;
@@ -251,7 +270,7 @@ function Sales() {
     </>
   );
 
-  const challanLabel = (sale: Sale) => {
+  const challanLabel = (sale: SaleListItem) => {
     const count = sale.challanCount || 1;
     if (count <= 1) {
       return String(sale.challanNo);

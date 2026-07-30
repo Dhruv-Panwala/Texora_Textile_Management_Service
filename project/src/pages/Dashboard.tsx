@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowUpRight, BarChart3, IndianRupee, RefreshCw, Scale, TrendingUp, Wallet } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../services/api';
@@ -62,12 +62,17 @@ function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary>(emptySummary);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const lastLoadedAt = useRef(0);
 
-  const loadSummary = useCallback(async () => {
+  const loadSummary = useCallback(async (force = false) => {
+    if (!force && Date.now() - lastLoadedAt.current < 30_000) {
+      return;
+    }
     setLoading(true);
     setError('');
     try {
       setSummary(await api.get<DashboardSummary>(`/api/dashboard?period=${period}`));
+      lastLoadedAt.current = Date.now();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load dashboard data');
     } finally {
@@ -76,7 +81,7 @@ function Dashboard() {
   }, [period]);
 
   useEffect(() => {
-    void loadSummary();
+    void loadSummary(true);
     const refreshWhenFocused = () => { void loadSummary(); };
     window.addEventListener('focus', refreshWhenFocused);
     return () => window.removeEventListener('focus', refreshWhenFocused);
@@ -164,7 +169,7 @@ function Dashboard() {
                 </button>
               ))}
             </div>
-            <button type="button" className="btn-secondary" onClick={() => void loadSummary()} disabled={loading}>
+            <button type="button" className="btn-secondary" onClick={() => void loadSummary(true)} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </button>
           </div>

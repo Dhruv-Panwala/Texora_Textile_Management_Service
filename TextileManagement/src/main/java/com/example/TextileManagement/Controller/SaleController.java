@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.example.TextileManagement.entities.PaymentUpdate;
 import com.example.TextileManagement.entities.Sale;
+import com.example.TextileManagement.dto.SaleListItem;
 import com.example.TextileManagement.service.PdfDocumentService;
 import com.example.TextileManagement.service.SaleService;
 
@@ -38,7 +39,7 @@ public class SaleController {
     }
 
     @GetMapping
-    public PageResponse<Sale> getAllSales(@RequestParam(defaultValue = "0") int page,
+    public PageResponse<SaleListItem> getAllSales(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
         return PageResponse.from(saleService.getSalesPage(page, size));
     }

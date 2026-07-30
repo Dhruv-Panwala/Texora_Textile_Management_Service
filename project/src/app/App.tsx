@@ -24,6 +24,7 @@ function App() {
   const [authReady, setAuthReady] = useState(false);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
   const [activeCompanyId, setActiveCompanyId] = useState<string>(getCompanyId() || '');
+  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [permissionMessage, setPermissionMessage] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
@@ -33,6 +34,7 @@ function App() {
       clearCompanyId();
       setCompanies([]);
       setActiveCompanyId('');
+      setWorkspaceReady(false);
       setAuthenticated(false);
       setWorkspaceError('');
     };
@@ -78,6 +80,7 @@ function App() {
     }
 
     let cancelled = false;
+    setWorkspaceReady(false);
     api.getCompanyProfiles().then((loadedCompanies) => {
       if (cancelled) {
         return;
@@ -96,9 +99,11 @@ function App() {
       }
       setActiveCompanyId(fallbackId);
       setWorkspaceError('');
+      setWorkspaceReady(true);
     }).catch((err) => {
       if (!cancelled) {
         setWorkspaceError(err instanceof Error ? err.message : 'Could not load your companies. Please refresh the page.');
+        setWorkspaceReady(true);
       }
     });
 
@@ -112,6 +117,7 @@ function App() {
     clearCompanyId();
     setCompanies([]);
     setActiveCompanyId('');
+    setWorkspaceReady(false);
     setAuthenticated(false);
     setWorkspaceError('');
     setMobileNavOpen(false);
@@ -131,6 +137,7 @@ function App() {
   };
 
   const handleAuthenticated = useCallback(() => {
+    setWorkspaceReady(false);
     setAuthenticated(true);
   }, []);
 
@@ -141,6 +148,18 @@ function App() {
           <p className="stat-chip mb-4">Preparing workspace</p>
           <h1 className="page-title text-3xl">Checking session...</h1>
           <p className="page-subtitle">Loading your textile workspace and restoring the last signed-in state.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authenticated && !workspaceReady) {
+    return (
+      <div className="app-shell flex min-h-screen items-center justify-center px-6 text-center">
+        <div className="glass-panel max-w-md px-8 py-10">
+          <p className="stat-chip mb-4">Preparing workspace</p>
+          <h1 className="page-title text-3xl">Loading your company...</h1>
+          <p className="page-subtitle">Selecting the active company before loading company data.</p>
         </div>
       </div>
     );

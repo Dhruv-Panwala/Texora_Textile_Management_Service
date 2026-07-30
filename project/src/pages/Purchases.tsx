@@ -27,20 +27,29 @@ function Purchases() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const loadPurchases = useCallback(async () => {
     try {
-      const [purchasePage, supplierPage] = await Promise.all([
-        api.get<PageResult<Purchase>>(`/api/purchases?page=${page}&size=25`),
-        api.get<PageResult<Supplier>>('/api/suppliers?page=0&size=100'),
-      ]);
+      const purchasePage = await api.get<PageResult<Purchase>>(`/api/purchases?page=${page}&size=25`);
       setPurchases(purchasePage.content);
       setTotalPages(purchasePage.totalPages);
-      setSuppliers(supplierPage.content);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load purchases');
     }
   }, [page]);
-  useEffect(() => { load(); }, [load]);
+
+  const loadSuppliers = useCallback(async () => {
+    try {
+      const supplierPage = await api.get<PageResult<Supplier>>('/api/suppliers?page=0&size=100');
+      setSuppliers(supplierPage.content);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load suppliers');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPurchases();
+    void loadSuppliers();
+  }, [loadPurchases, loadSuppliers]);
 
   const purchasePayload = (purchase: typeof emptyPurchase) => ({
     purchaseDate: purchase.purchaseDate || null,
@@ -60,10 +69,13 @@ function Purchases() {
     setSaving(true);
     setError('');
     try {
-      await api.post<Purchase>('/api/purchases', purchasePayload(newPurchase));
+      const createdPurchase = await api.post<Purchase>('/api/purchases', purchasePayload(newPurchase));
+      setPurchases((current) => page === 0
+        ? [createdPurchase, ...current.filter((purchase) => purchase.id !== createdPurchase.id)].slice(0, 25)
+        : current);
       setIsAdding(false);
       setNewPurchase(emptyPurchase);
-      await load();
+      void loadPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save purchase');
     } finally {
@@ -93,10 +105,11 @@ function Purchases() {
     setSaving(true);
     setError('');
     try {
-      await api.put<Purchase>(`/api/purchases/${editingPurchaseId}`, purchasePayload(editingPurchase));
+      const updatedPurchase = await api.put<Purchase>(`/api/purchases/${editingPurchaseId}`, purchasePayload(editingPurchase));
+      setPurchases((current) => current.map((purchase) => purchase.id === updatedPurchase.id ? updatedPurchase : purchase));
       setEditingPurchaseId(null);
       setEditingPurchase(emptyPurchase);
-      await load();
+      void loadPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update purchase');
     } finally {
@@ -112,7 +125,8 @@ function Purchases() {
     setError('');
     try {
       await api.delete(`/api/purchases/${purchase.id}`);
-      await load();
+      setPurchases((current) => current.filter((currentPurchase) => currentPurchase.id !== purchase.id));
+      void loadPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete purchase');
     }

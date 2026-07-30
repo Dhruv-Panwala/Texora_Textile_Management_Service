@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.example.TextileManagement.entities.Sale;
 
@@ -26,6 +27,10 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     @EntityGraph(attributePaths = {"customer", "takaEntries", "company"})
     Page<Sale> findAllByCompany_Id(Long companyId, Pageable pageable);
+
+    @Query(value = "select s from Sale s join fetch s.customer where s.company.id = :companyId",
+            countQuery = "select count(s) from Sale s where s.company.id = :companyId")
+    Page<Sale> findPageForList(@Param("companyId") Long companyId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"customer", "takaEntries", "company"})
     Optional<Sale> findByIdAndCompany_Id(Long id, Long companyId);
