@@ -10,6 +10,11 @@ type ApiRequestOptions = RequestInit & {
   includeCompanyId?: boolean;
 };
 
+function withCompanyQuery(path: string, companyId: string) {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}companyId=${encodeURIComponent(companyId)}`;
+}
+
 export function getCompanyId() {
   return localStorage.getItem(COMPANY_KEY);
 }
@@ -72,18 +77,23 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
   const { includeCompanyId = true, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers);
   const method = (fetchOptions.method || 'GET').toUpperCase();
-  if (!(fetchOptions.body instanceof FormData)) {
+  const isReadRequest = method === 'GET' || method === 'HEAD';
+  const companyId = getCompanyId();
+  const requestPath = includeCompanyId && companyId && isReadRequest
+    ? withCompanyQuery(path, companyId)
+    : path;
+
+  if (fetchOptions.body !== undefined && fetchOptions.body !== null && !(fetchOptions.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
     headers.set('X-CSRF-TOKEN', await getCsrfToken());
   }
-  const companyId = getCompanyId();
-  if (includeCompanyId && companyId) {
+  if (includeCompanyId && companyId && !isReadRequest) {
     headers.set('X-Company-Id', companyId);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...fetchOptions, headers, credentials: 'include' });
+  const response = await fetch(`${API_BASE_URL}${requestPath}`, { ...fetchOptions, headers, credentials: 'include' });
   if (!response.ok) {
     if (response.status === 401 && path === '/api/auth/me') {
       return handleAuthExpired<T>();
@@ -173,11 +183,9 @@ export const api = {
   deleteCompanyLogo: () => request<void>('/api/company/logo', { method: 'DELETE' }),
   getCompanyLogo: async () => {
     const companyId = getCompanyId();
-    const response = await fetch(`${API_BASE_URL}/api/company/logo`, {
+    const requestPath = companyId ? withCompanyQuery('/api/company/logo', companyId) : '/api/company/logo';
+    const response = await fetch(`${API_BASE_URL}${requestPath}`, {
       credentials: 'include',
-      headers: {
-        ...(companyId ? { 'X-Company-Id': companyId } : {}),
-      },
     });
     if (response.status === 404) {
       return null;
@@ -195,11 +203,9 @@ export const api = {
   },
   download: async (path: string, filename: string) => {
     const companyId = getCompanyId();
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const requestPath = companyId ? withCompanyQuery(path, companyId) : path;
+    const response = await fetch(`${API_BASE_URL}${requestPath}`, {
       credentials: 'include',
-      headers: {
-        ...(companyId ? { 'X-Company-Id': companyId } : {}),
-      },
     });
     if (!response.ok) {
       if (response.status === 401) {

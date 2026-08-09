@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { Download, Pencil, Plus, Trash } from 'lucide-react';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
-import { PageResult, Purchase, Supplier } from '../types';
+import { PageResult, Purchase, PurchaseListItem, Supplier } from '../types';
 
 const emptyPurchase = {
   purchaseDate: '',
@@ -16,7 +16,7 @@ const emptyPurchase = {
 
 function Purchases() {
   const [error, setError] = useState('');
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseListItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [newPurchase, setNewPurchase] = useState(emptyPurchase);
@@ -26,10 +26,11 @@ function Purchases() {
   const [totalPages, setTotalPages] = useState(0);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const suppliersLoadedRef = useRef(false);
 
   const loadPurchases = useCallback(async () => {
     try {
-      const purchasePage = await api.get<PageResult<Purchase>>(`/api/purchases?page=${page}&size=25`);
+      const purchasePage = await api.get<PageResult<PurchaseListItem>>(`/api/purchases?page=${page}&size=25`);
       setPurchases(purchasePage.content);
       setTotalPages(purchasePage.totalPages);
     } catch (err) {
@@ -38,9 +39,13 @@ function Purchases() {
   }, [page]);
 
   const loadSuppliers = useCallback(async () => {
+    if (suppliersLoadedRef.current) {
+      return;
+    }
     try {
       const supplierPage = await api.get<PageResult<Supplier>>('/api/suppliers?page=0&size=100');
       setSuppliers(supplierPage.content);
+      suppliersLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load suppliers');
     }
@@ -48,8 +53,7 @@ function Purchases() {
 
   useEffect(() => {
     void loadPurchases();
-    void loadSuppliers();
-  }, [loadPurchases, loadSuppliers]);
+  }, [loadPurchases]);
 
   const purchasePayload = (purchase: typeof emptyPurchase) => ({
     purchaseDate: purchase.purchaseDate || null,
@@ -85,6 +89,7 @@ function Purchases() {
   };
 
   const startEdit = (purchase: Purchase) => {
+    void loadSuppliers();
     setEditingPurchaseId(purchase.id);
     setEditingPurchase({
       purchaseDate: purchase.purchaseDate,
@@ -118,7 +123,7 @@ function Purchases() {
     }
   };
 
-  const remove = async (purchase: Purchase) => {
+  const remove = async (purchase: PurchaseListItem) => {
     if (!confirmDelete(`purchase from "${purchase.supplier?.name || 'supplier'}"`)) {
       return;
     }
@@ -186,7 +191,7 @@ function Purchases() {
           <button onClick={exportCsv} className="btn-secondary">
             <Download className="w-5 h-5" /> Export CSV
           </button>
-          <button onClick={() => setIsAdding(true)} className="btn-primary">
+          <button onClick={() => { void loadSuppliers(); setIsAdding(true); }} className="btn-primary">
             <Plus className="w-5 h-5" /> New Purchase
           </button>
         </div>

@@ -115,6 +115,10 @@ export interface Purchase {
   createdAt?: string;
 }
 
+export type PurchaseListItem = Omit<Purchase, 'supplier'> & {
+  supplier: Pick<Supplier, 'id' | 'name'>;
+};
+
 export interface Payment {
   type: 'TO_SUPPLIER' | 'FROM_CUSTOMER';
   sourceId: number;

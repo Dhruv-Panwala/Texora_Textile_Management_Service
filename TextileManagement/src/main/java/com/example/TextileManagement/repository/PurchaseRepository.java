@@ -8,11 +8,23 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import com.example.TextileManagement.entities.Purchase;
+import com.example.TextileManagement.dto.PurchaseListItem;
 
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     List<Purchase> findAllByCompany_IdOrderByPurchaseDateDesc(Long companyId);
 
     Page<Purchase> findAllByCompany_Id(Long companyId, Pageable pageable);
+
+    @org.springframework.data.jpa.repository.Query(value = """
+            select new com.example.TextileManagement.dto.PurchaseListItem(
+                p.id, p.purchaseDate, p.supplier.id, p.supplier.name, p.materialType, p.description,
+                p.quantity, p.rate, p.amount, p.dueDate, p.paymentDate, p.paymentMode, p.chequeNo,
+                p.status, p.createdAt)
+            from Purchase p
+            where p.company.id = :companyId
+            """, countQuery = "select count(p) from Purchase p where p.company.id = :companyId")
+    Page<PurchaseListItem> findPageForList(@org.springframework.data.repository.query.Param("companyId") Long companyId,
+            Pageable pageable);
 
     java.util.Optional<Purchase> findByIdAndCompany_Id(Long id, Long companyId);
 

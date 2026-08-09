@@ -89,6 +89,7 @@ function App() {
       const activeId = getCompanyId();
       if (activeId && loadedCompanies.some((company) => String(company.id) === activeId)) {
         setActiveCompanyId(activeId);
+        setWorkspaceReady(true);
         return;
       }
       const fallbackId = loadedCompanies[0] ? String(loadedCompanies[0].id) : '';

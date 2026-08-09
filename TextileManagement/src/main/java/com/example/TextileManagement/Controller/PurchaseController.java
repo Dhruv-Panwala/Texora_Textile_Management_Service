@@ -27,6 +27,7 @@ import com.example.TextileManagement.entities.CompanyProfile;
 import com.example.TextileManagement.entities.PaymentUpdate;
 import com.example.TextileManagement.entities.Purchase;
 import com.example.TextileManagement.entities.Supplier;
+import com.example.TextileManagement.dto.PurchaseListItem;
 import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.example.TextileManagement.repository.PurchaseRepository;
 import com.example.TextileManagement.repository.SupplierRepository;
@@ -47,10 +48,10 @@ public class PurchaseController {
     }
 
     @GetMapping
-    public PageResponse<Purchase> getAll(@RequestParam(defaultValue = "0") int page,
+    public PageResponse<PurchaseListItem> getAll(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
         int boundedSize = Math.min(Math.max(size, 1), 100);
-        return PageResponse.from(purchaseRepository.findAllByCompany_Id(currentCompanyId(),
+        return PageResponse.from(purchaseRepository.findPageForList(currentCompanyId(),
                 PageRequest.of(Math.max(0, page), boundedSize, Sort.by("purchaseDate").descending())));
     }
 

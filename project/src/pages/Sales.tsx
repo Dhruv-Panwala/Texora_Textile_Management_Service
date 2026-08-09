@@ -35,6 +35,7 @@ function Sales() {
   const [downloading, setDownloading] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const customersLoadedRef = useRef(false);
 
   const loadSales = useCallback(async () => {
     try {
@@ -47,9 +48,13 @@ function Sales() {
   }, [page]);
 
   const loadCustomers = useCallback(async () => {
+    if (customersLoadedRef.current) {
+      return;
+    }
     try {
       const customersPage = await api.get<PageResult<Customer>>('/api/customers?page=0&size=100');
       setCustomers(customersPage.content);
+      customersLoadedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load customers');
     }
@@ -57,8 +62,7 @@ function Sales() {
 
   useEffect(() => {
     void loadSales();
-    void loadCustomers();
-  }, [loadCustomers, loadSales]);
+  }, [loadSales]);
 
   const totalMeters = useMemo(() => newSale.takaEntries.reduce((sum, t) => sum + Number(t.meters || 0), 0), [newSale.takaEntries]);
   const totalAmount = totalMeters * Number(newSale.rate || 0);
@@ -103,7 +107,10 @@ function Sales() {
 
   const startEdit = async (sale: SaleListItem) => {
     try {
-      const fullSale = await api.get<Sale>(`/api/sales/${sale.id}`);
+      const [fullSale] = await Promise.all([
+        api.get<Sale>(`/api/sales/${sale.id}`),
+        loadCustomers(),
+      ]);
       setEditingSaleId(fullSale.id);
       setEditingSale({
         saleDate: fullSale.saleDate,
@@ -289,7 +296,7 @@ function Sales() {
           <button onClick={exportCsv} className="btn-secondary">
             <Download className="w-5 h-5" /> Export CSV
           </button>
-          <button onClick={() => setIsAddingNewSale(true)} className="btn-primary">
+          <button onClick={() => { void loadCustomers(); setIsAddingNewSale(true); }} className="btn-primary">
             <Plus className="w-5 h-5" /> New Sale
           </button>
         </div>

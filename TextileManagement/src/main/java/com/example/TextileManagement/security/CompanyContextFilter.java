@@ -40,7 +40,8 @@ public class CompanyContextFilter extends OncePerRequestFilter {
                 return;
             }
 
-            Long companyId = resolveCompanyId(request.getHeader(HEADER_NAME), authentication.getName(), response);
+            Long companyId = resolveCompanyId(request.getHeader(HEADER_NAME), request.getParameter("companyId"),
+                    authentication.getName(), response);
             if (companyId == null) {
                 return;
             }
@@ -56,10 +57,12 @@ public class CompanyContextFilter extends OncePerRequestFilter {
         return request.getRequestURI().startsWith("/api/auth/invitations/");
     }
 
-    private Long resolveCompanyId(String headerValue, String username, HttpServletResponse response) throws IOException {
-        if (headerValue != null && !headerValue.isBlank()) {
+    private Long resolveCompanyId(String headerValue, String queryValue, String username,
+            HttpServletResponse response) throws IOException {
+        String requestedValue = headerValue != null && !headerValue.isBlank() ? headerValue : queryValue;
+        if (requestedValue != null && !requestedValue.isBlank()) {
             try {
-                Long companyId = Long.valueOf(headerValue.trim());
+                Long companyId = Long.valueOf(requestedValue.trim());
                 if (companyAccessService.canAccess(username, companyId)) {
                     return companyId;
                 }
