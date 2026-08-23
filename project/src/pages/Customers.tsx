@@ -3,6 +3,7 @@ import { Download, Pencil, Plus, Search, Trash } from 'lucide-react';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
 import { Customer, PageResult } from '../types';
+import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 
 const emptyCustomer = { name: '', contact: '', address: '', gstNo: '', brokerName: '', deliveryAddress: '' };
 const gstPattern = '[A-Za-z0-9]{15}';
@@ -17,14 +18,18 @@ function Customers() {
   const [editingCustomer, setEditingCustomer] = useState(emptyCustomer);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const result = await api.get<PageResult<Customer>>(`/api/customers?page=${page}&size=25`);
       setCustomers(result.content);
       setTotalPages(result.totalPages);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load customers');
+    } finally {
+      setLoading(false);
     }
   }, [page]);
   useEffect(() => { load(); }, [load]);
@@ -161,7 +166,7 @@ function Customers() {
         </form>
       )}
 
-      <div className="table-surface p-6">
+      <div className="table-surface p-6" aria-busy={loading}>
         <div className="mb-6 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input placeholder="Search customers..." className="w-full !rounded-2xl !pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -170,7 +175,7 @@ function Customers() {
           <table className="data-table">
             <thead><tr>{['Name', 'Contact', 'GST', 'Address', 'Created', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
-              {filteredCustomers.map((customer) => (
+              {loading && customers.length === 0 ? <SkeletonRows columns={6} /> : filteredCustomers.map((customer) => (
                 <tr key={customer.id}>
                   <td>{customer.name}</td>
                   <td>{customer.contact}</td>

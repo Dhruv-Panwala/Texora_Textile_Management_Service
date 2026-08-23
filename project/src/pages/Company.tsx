@@ -27,6 +27,14 @@ function Company() {
     setLoading(true);
     setError('');
     setLogoError('');
+    const logoRequest = api.getCompanyLogo()
+      .then((logo) => {
+        setLogoPreviewUrl(logo ? URL.createObjectURL(logo) : '');
+      })
+      .catch(() => {
+        setLogoPreviewUrl('');
+        setLogoError('Company details loaded, but the logo could not be loaded. Re-upload or remove the logo before downloading bills or challans.');
+      });
     try {
       const data = await api.getCompanyProfile();
       setProfile({
@@ -38,18 +46,12 @@ function Company() {
         defaultQuality: data.defaultQuality || '',
       });
       setLogoFile(null);
-      try {
-        const logo = await api.getCompanyLogo();
-        setLogoPreviewUrl(logo ? URL.createObjectURL(logo) : '');
-      } catch {
-        setLogoPreviewUrl('');
-        setLogoError('Company details loaded, but the logo could not be loaded. Re-upload or remove the logo before downloading bills or challans.');
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load company profile');
     } finally {
       setLoading(false);
     }
+    await logoRequest;
   };
 
   useEffect(() => {

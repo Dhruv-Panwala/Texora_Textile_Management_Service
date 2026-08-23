@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { format, isAfter, parseISO } from 'date-fns';
 import { AlertCircle, Download } from 'lucide-react';
 import { api } from '../services/api';
 import { downloadCsv } from '../utils/csv';
-import { Payment, PaymentUpdate } from '../types';
+import { PageResult, Payment, PaymentUpdate } from '../types';
+import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 
 const emptyPayment: PaymentUpdate = { paymentDate: '', paymentMode: 'CASH', chequeNo: '' };
 
@@ -14,19 +15,28 @@ function Payments() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setPayments(await api.get<Payment[]>('/api/payments'));
+      const result = await api.get<PageResult<Payment>>(`/api/payments?page=${page}&size=25`);
+      if (result.content.length === 0 && page > 0) {
+        setPage((current) => current - 1);
+        return;
+      }
+      setPayments(result.content);
+      setTotalPages(result.totalPages);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load payments');
     } finally {
       setLoading(false);
     }
-  };
-  useEffect(() => { void load(); }, []);
+  }, [page]);
+  useEffect(() => { void load(); }, [load]);
 
   const openPaymentForm = (payment: Payment) => {
     setActivePayment(payment);
@@ -55,29 +65,45 @@ function Payments() {
     }
   };
 
-  const exportCsv = () => downloadCsv('payments.csv', payments, [
-    { header: 'Type', value: (payment) => payment.type },
-    { header: 'Party', value: (payment) => payment.entityName },
-    { header: 'Material/Quality', value: (payment) => payment.materialOrClothType },
-    { header: 'Source Date', value: (payment) => payment.sourceDate },
-    { header: 'Due Date', value: (payment) => payment.dueDate },
-    { header: 'Amount', value: (payment) => payment.amount },
-    { header: 'Payment Date', value: (payment) => payment.paymentDate },
-    { header: 'Payment Mode', value: (payment) => payment.paymentMode },
-    { header: 'Cheque No', value: (payment) => payment.chequeNo },
-    { header: 'Status', value: (payment) => payment.status },
-  ]);
+  const exportCsv = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const firstPage = await api.get<PageResult<Payment>>('/api/payments?page=0&size=100');
+      const allPayments = [...firstPage.content];
+      for (let exportPage = 1; exportPage < firstPage.totalPages; exportPage += 1) {
+        const result = await api.get<PageResult<Payment>>(`/api/payments?page=${exportPage}&size=100`);
+        allPayments.push(...result.content);
+      }
+      downloadCsv('payments.csv', allPayments, [
+        { header: 'Type', value: (payment) => payment.type },
+        { header: 'Party', value: (payment) => payment.entityName },
+        { header: 'Material/Quality', value: (payment) => payment.materialOrClothType },
+        { header: 'Source Date', value: (payment) => payment.sourceDate },
+        { header: 'Due Date', value: (payment) => payment.dueDate },
+        { header: 'Amount', value: (payment) => payment.amount },
+        { header: 'Payment Date', value: (payment) => payment.paymentDate },
+        { header: 'Payment Mode', value: (payment) => payment.paymentMode },
+        { header: 'Cheque No', value: (payment) => payment.chequeNo },
+        { header: 'Status', value: (payment) => payment.status },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not export payments');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const section = (title: string, type: Payment['type'], action: string) => {
     const items = payments.filter((p) => p.type === type);
     return (
-      <div className="bg-white rounded-xl shadow-md p-6">
+      <div className="bg-white rounded-xl shadow-md p-6" aria-busy={loading}>
         <h2 className="text-xl font-semibold text-gray-900 mb-4">{title}</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead><tr>{['Due Date', 'Party', 'Material/Quality', 'Amount', 'Status'].map(h => <th key={h} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>)}</tr></thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {items.map((payment) => {
+              {loading && payments.length === 0 ? <SkeletonRows columns={5} rows={5} /> : items.map((payment) => {
                 const overdue = isAfter(new Date(), parseISO(payment.dueDate));
                 return (
                   <tr key={`${payment.type}-${payment.sourceId}`} className={overdue ? 'bg-red-50' : ''}>
@@ -103,12 +129,12 @@ function Payments() {
           <h1 className="page-title">Payments</h1>
           <p className="page-subtitle">Follow overdue collections and supplier payouts with a clearer action-focused layout.</p>
         </div>
-        <button onClick={exportCsv} className="btn-secondary">
-          <Download className="w-5 h-5" /> Export CSV
+        <button disabled={exporting} onClick={() => void exportCsv()} className="btn-secondary disabled:opacity-60">
+          <Download className="w-5 h-5" /> {exporting ? 'Exporting...' : 'Export CSV'}
         </button>
       </div>
       {error && <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-      {loading && <p className="text-sm text-stone-500">Loading payments...</p>}
+      {loading && payments.length > 0 && <p className="text-sm text-stone-500" aria-live="polite">Refreshing payments...</p>}
       {activePayment && (
         <form onSubmit={markPaid} className="form-surface space-y-4">
           <div className="font-semibold text-gray-900">
@@ -133,6 +159,17 @@ function Payments() {
       )}
       {section('Payments to Suppliers', 'TO_SUPPLIER', 'Mark as Paid')}
       {section('Payments from Customers', 'FROM_CUSTOMER', 'Received')}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm">
+          <button className="btn-secondary" disabled={loading || page === 0} onClick={() => setPage((current) => current - 1)}>
+            Previous
+          </button>
+          <span>Page {page + 1} of {totalPages}</span>
+          <button className="btn-secondary" disabled={loading || page + 1 >= totalPages} onClick={() => setPage((current) => current + 1)}>
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

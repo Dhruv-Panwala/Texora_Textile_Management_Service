@@ -3,6 +3,7 @@ import { AlertCircle, ArrowUpRight, BarChart3, IndianRupee, RefreshCw, Scale, Tr
 import { format } from 'date-fns';
 import { api } from '../services/api';
 import { DashboardSummary } from '../types';
+import { DashboardSkeleton } from '../components/ui/LoadingSkeleton';
 
 type DashboardPeriod = 'weekly' | 'monthly' | 'yearly';
 
@@ -61,6 +62,7 @@ function Dashboard() {
   const [period, setPeriod] = useState<DashboardPeriod>('monthly');
   const [summary, setSummary] = useState<DashboardSummary>(emptySummary);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState('');
   const lastLoadedAt = useRef(0);
 
@@ -73,6 +75,7 @@ function Dashboard() {
     try {
       setSummary(await api.get<DashboardSummary>(`/api/dashboard?period=${period}`));
       lastLoadedAt.current = Date.now();
+      setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load dashboard data');
     } finally {
@@ -154,6 +157,7 @@ function Dashboard() {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {loading && hasLoaded && <span className="text-xs font-semibold text-stone-500" aria-live="polite">Refreshing data...</span>}
             <div className="inline-flex rounded-full border border-white/70 bg-white/65 p-1 shadow-sm backdrop-blur">
               {(['weekly', 'monthly', 'yearly'] as DashboardPeriod[]).map((option) => (
                 <button
@@ -177,6 +181,7 @@ function Dashboard() {
         {error && <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div>}
       </section>
 
+      {!hasLoaded ? <DashboardSkeleton /> : <>
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-4">
         {primaryCards.map(({ label, value, note, icon: Icon, accent, iconColor }) => (
           <article key={label} className="card-surface relative overflow-hidden">
@@ -283,6 +288,7 @@ function Dashboard() {
           </p>
         </div>
       )}
+      </>}
     </div>
   );
 }

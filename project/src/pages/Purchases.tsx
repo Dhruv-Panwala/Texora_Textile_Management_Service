@@ -4,6 +4,7 @@ import { Download, Pencil, Plus, Trash } from 'lucide-react';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
 import { PageResult, Purchase, PurchaseListItem, Supplier } from '../types';
+import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 
 const emptyPurchase = {
   purchaseDate: '',
@@ -25,16 +26,20 @@ function Purchases() {
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const savingRef = useRef(false);
   const suppliersLoadedRef = useRef(false);
 
   const loadPurchases = useCallback(async () => {
+    setLoading(true);
     try {
       const purchasePage = await api.get<PageResult<PurchaseListItem>>(`/api/purchases?page=${page}&size=25`);
       setPurchases(purchasePage.content);
       setTotalPages(purchasePage.totalPages);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load purchases');
+    } finally {
+      setLoading(false);
     }
   }, [page]);
 
@@ -219,7 +224,7 @@ function Purchases() {
         </form>
       )}
 
-      <div className="table-surface">
+      <div className="table-surface" aria-busy={loading}>
         <div className="border-b border-stone-200/70 px-6 py-5">
           <h2 className="text-xl font-bold text-stone-900">Purchase List</h2>
           <p className="mt-1 text-sm text-stone-500">Browse all recorded purchases with cleaner spacing and easier scanning.</p>
@@ -228,7 +233,7 @@ function Purchases() {
           <table className="data-table">
             <thead><tr>{['Date', 'Supplier', 'Material', 'Description', 'Quantity', 'Amount', 'Payment', 'Status', 'Created', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
-              {purchases.map((purchase) => (
+              {loading && purchases.length === 0 ? <SkeletonRows columns={10} /> : purchases.map((purchase) => (
                 <tr key={purchase.id}>
                   <td>{format(new Date(purchase.purchaseDate), 'dd MMM yyyy')}</td>
                   <td>{purchase.supplier?.name}</td>

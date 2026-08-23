@@ -3,6 +3,7 @@ import { Download, Pencil, Plus, Search, Trash } from 'lucide-react';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
 import { PageResult, Supplier } from '../types';
+import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 
 const emptySupplier = { name: '', contact: '', address: '' };
 
@@ -16,14 +17,18 @@ function Suppliers() {
   const [editingSupplier, setEditingSupplier] = useState(emptySupplier);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const result = await api.get<PageResult<Supplier>>(`/api/suppliers?page=${page}&size=25`);
       setSuppliers(result.content);
       setTotalPages(result.totalPages);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load suppliers');
+    } finally {
+      setLoading(false);
     }
   }, [page]);
   useEffect(() => { load(); }, [load]);
@@ -142,7 +147,7 @@ function Suppliers() {
         </form>
       )}
 
-      <div className="table-surface p-6">
+      <div className="table-surface p-6" aria-busy={loading}>
         <div className="mb-6 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input placeholder="Search suppliers..." className="w-full !rounded-2xl !pl-10" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
@@ -151,7 +156,7 @@ function Suppliers() {
           <table className="data-table">
             <thead><tr>{['Name', 'Contact', 'Address', 'Created', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
-              {filteredSuppliers.map((supplier) => (
+              {loading && suppliers.length === 0 ? <SkeletonRows columns={5} /> : filteredSuppliers.map((supplier) => (
                 <tr key={supplier.id}>
                   <td>{supplier.name}</td>
                   <td>{supplier.contact}</td>

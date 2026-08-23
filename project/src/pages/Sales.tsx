@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
 import { Customer, PageResult, Sale, SaleListItem } from '../types';
+import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 
 interface TakaDraft {
   takaNo: string;
@@ -34,16 +35,20 @@ function Sales() {
   const [totalPages, setTotalPages] = useState(0);
   const [downloading, setDownloading] = useState('');
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const savingRef = useRef(false);
   const customersLoadedRef = useRef(false);
 
   const loadSales = useCallback(async () => {
+    setLoading(true);
     try {
       const salesPage = await api.get<PageResult<SaleListItem>>(`/api/sales?page=${page}&size=25`);
       setSales(salesPage.content);
       setTotalPages(salesPage.totalPages);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load sales');
+    } finally {
+      setLoading(false);
     }
   }, [page]);
 
@@ -324,7 +329,7 @@ function Sales() {
         </form>
       )}
 
-      <div className="table-surface">
+      <div className="table-surface" aria-busy={loading}>
         <div className="border-b border-stone-200/70 px-6 py-5">
           <h2 className="text-xl font-bold text-stone-900">Sales List</h2>
           <p className="mt-1 text-sm text-stone-500">Responsive table view for all recorded sales and generated documents.</p>
@@ -333,7 +338,7 @@ function Sales() {
           <table className="data-table">
             <thead><tr>{['Date', 'Customer', 'Challan', 'Bill', 'Quality', 'Meters', 'Amount', 'Payment', 'Created', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr></thead>
             <tbody>
-              {sales.map((sale) => (
+              {loading && sales.length === 0 ? <SkeletonRows columns={10} /> : sales.map((sale) => (
                 <tr key={sale.id}>
                   <td>{format(new Date(sale.saleDate), 'dd MMM yyyy')}</td>
                   <td>{sale.customer?.name}</td>

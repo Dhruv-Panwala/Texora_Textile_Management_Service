@@ -1,54 +1,32 @@
 package com.example.TextileManagement.controller;
 
-import java.util.Comparator;
-import java.util.List;
-import java.util.stream.Stream;
-
+import org.springframework.data.domain.PageRequest;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.TextileManagement.config.CurrentCompanyContext;
 import com.example.TextileManagement.entities.Payment;
-import com.example.TextileManagement.repository.PurchaseRepository;
-import com.example.TextileManagement.repository.SaleRepository;
+import com.example.TextileManagement.repository.PaymentQueryRepository;
 
 @RestController
 @RequestMapping("/api/payments")
 public class PaymentController {
-    private final PurchaseRepository purchaseRepository;
-    private final SaleRepository saleRepository;
+    private final PaymentQueryRepository paymentQueryRepository;
     private final CurrentCompanyContext currentCompanyContext;
 
-    public PaymentController(PurchaseRepository purchaseRepository, SaleRepository saleRepository, CurrentCompanyContext currentCompanyContext) {
-        this.purchaseRepository = purchaseRepository;
-        this.saleRepository = saleRepository;
+    public PaymentController(PaymentQueryRepository paymentQueryRepository, CurrentCompanyContext currentCompanyContext) {
+        this.paymentQueryRepository = paymentQueryRepository;
         this.currentCompanyContext = currentCompanyContext;
     }
 
     @GetMapping
-    public List<Payment> getPendingPayments() {
-        Long companyId = currentCompanyId();
-        Stream<Payment> purchases = purchaseRepository.findAllByCompany_IdOrderByPurchaseDateDesc(companyId).stream()
-                .filter(p -> !"PAID".equalsIgnoreCase(p.getStatus()))
-                .map(p -> new Payment("TO_SUPPLIER", p.getId(), p.getPurchaseDate(), p.getDueDate(), p.getSupplier().getName(),
-                        purchaseLabel(p.getMaterialType(), p.getDescription()), p.getAmount(),
-                        p.getPaymentDate(), p.getPaymentMode(), p.getChequeNo(), p.getStatus()));
-        Stream<Payment> sales = saleRepository.findAllByCompany_Id(companyId).stream()
-                .filter(s -> !"PAID".equalsIgnoreCase(s.getStatus()))
-                .map(s -> new Payment("FROM_CUSTOMER", s.getId(), s.getSaleDate(), s.getDueDate(), s.getCustomer().getName(),
-                        s.getQuality(), s.getAmount(), s.getPaymentDate(), s.getPaymentMode(), s.getChequeNo(),
-                        s.getStatus()));
-        return Stream.concat(purchases, sales)
-                .sorted(Comparator.comparing(Payment::dueDate))
-                .toList();
-    }
-
-    private String purchaseLabel(String materialType, String description) {
-        if ("MISCELLANEOUS".equalsIgnoreCase(materialType) && description != null && !description.isBlank()) {
-            return materialType + " - " + description;
-        }
-        return materialType;
+    public PageResponse<Payment> getPendingPayments(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size) {
+        int boundedSize = Math.min(Math.max(size, 1), 100);
+        return PageResponse.from(paymentQueryRepository.findPendingByCompanyId(currentCompanyId(),
+                PageRequest.of(Math.max(0, page), boundedSize)));
     }
 
     private Long currentCompanyId() {

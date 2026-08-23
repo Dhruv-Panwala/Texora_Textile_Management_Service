@@ -1,28 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import Sidebar from '../components/layout/Sidebar';
-import Dashboard from '../pages/Dashboard';
-import Purchases from '../pages/Purchases';
-import Sales from '../pages/Sales';
-import Payments from '../pages/Payments';
-import Suppliers from '../pages/Suppliers';
-import Customers from '../pages/Customers';
-import Company from '../pages/Company';
 import Login from '../pages/Login';
 import Signup from '../pages/Signup';
-import Members from '../pages/Members';
 import AcceptInvitation from '../pages/AcceptInvitation';
 import ForgotPassword from '../pages/ForgotPassword';
 import ResetPassword from '../pages/ResetPassword';
-import { AUTH_EXPIRED_EVENT, PERMISSION_DENIED_EVENT, api, clearCompanyId, getCompanyId, setCompanyId } from '../services/api';
+import { RouteLoading } from '../components/ui/LoadingSkeleton';
+import { AUTH_EXPIRED_EVENT, PERMISSION_DENIED_EVENT, api, clearCompanyId, clearCompanyProfileCache, getCompanyId, setCompanyId } from '../services/api';
 import type { CompanyProfile } from '../types';
+
+const Dashboard = lazy(() => import('../pages/Dashboard'));
+const Purchases = lazy(() => import('../pages/Purchases'));
+const Sales = lazy(() => import('../pages/Sales'));
+const Payments = lazy(() => import('../pages/Payments'));
+const Suppliers = lazy(() => import('../pages/Suppliers'));
+const Customers = lazy(() => import('../pages/Customers'));
+const Company = lazy(() => import('../pages/Company'));
+const Members = lazy(() => import('../pages/Members'));
 
 function App() {
   const publicSignupEnabled = import.meta.env.VITE_PUBLIC_SIGNUP_ENABLED !== 'false';
   const [authenticated, setAuthenticated] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [companies, setCompanies] = useState<CompanyProfile[]>([]);
+  const [companiesReady, setCompaniesReady] = useState(false);
   const [activeCompanyId, setActiveCompanyId] = useState<string>(getCompanyId() || '');
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -32,7 +35,9 @@ function App() {
   useEffect(() => {
     const handleAuthExpired = () => {
       clearCompanyId();
+      clearCompanyProfileCache();
       setCompanies([]);
+      setCompaniesReady(false);
       setActiveCompanyId('');
       setWorkspaceReady(false);
       setAuthenticated(false);
@@ -49,33 +54,63 @@ function App() {
     };
   }, []);
 
+  const selectCompany = useCallback((loadedCompanies: CompanyProfile[]) => {
+    setCompanies(loadedCompanies);
+    const activeId = getCompanyId();
+    if (activeId && loadedCompanies.some((company) => String(company.id) === activeId)) {
+      setActiveCompanyId(activeId);
+      setWorkspaceError('');
+      setCompaniesReady(true);
+      setWorkspaceReady(true);
+      return;
+    }
+    const fallbackId = loadedCompanies[0] ? String(loadedCompanies[0].id) : '';
+    if (fallbackId) {
+      setCompanyId(fallbackId);
+    } else {
+      clearCompanyId();
+    }
+    setActiveCompanyId(fallbackId);
+    setWorkspaceError('');
+    setCompaniesReady(true);
+    setWorkspaceReady(true);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    api.me()
-      .then(() => {
-        if (!cancelled) {
-          setAuthenticated(true);
-          setAuthReady(true);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          clearCompanyId();
-          setCompanies([]);
-          setActiveCompanyId('');
-          setAuthenticated(false);
-          setWorkspaceError('');
-          setAuthReady(true);
-        }
-      });
+    Promise.allSettled([api.me(), api.getCompanyProfiles()]).then(([sessionResult, companiesResult]) => {
+      if (cancelled) {
+        return;
+      }
+      if (sessionResult.status === 'rejected') {
+        clearCompanyId();
+        clearCompanyProfileCache();
+        setCompanies([]);
+        setCompaniesReady(false);
+        setActiveCompanyId('');
+        setAuthenticated(false);
+        setWorkspaceError('');
+        setAuthReady(true);
+        return;
+      }
+      setAuthenticated(true);
+      setAuthReady(true);
+      if (companiesResult.status === 'fulfilled') {
+        selectCompany(companiesResult.value);
+      } else {
+        setWorkspaceError(companiesResult.reason instanceof Error ? companiesResult.reason.message : 'Could not load your companies. Please refresh the page.');
+        setCompaniesReady(true);
+        setWorkspaceReady(true);
+      }
+    });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectCompany]);
 
   useEffect(() => {
-    if (!authenticated || !authReady) {
+    if (!authenticated || !authReady || companiesReady) {
       return;
     }
 
@@ -85,25 +120,11 @@ function App() {
       if (cancelled) {
         return;
       }
-      setCompanies(loadedCompanies);
-      const activeId = getCompanyId();
-      if (activeId && loadedCompanies.some((company) => String(company.id) === activeId)) {
-        setActiveCompanyId(activeId);
-        setWorkspaceReady(true);
-        return;
-      }
-      const fallbackId = loadedCompanies[0] ? String(loadedCompanies[0].id) : '';
-      if (fallbackId) {
-        setCompanyId(fallbackId);
-      } else {
-        clearCompanyId();
-      }
-      setActiveCompanyId(fallbackId);
-      setWorkspaceError('');
-      setWorkspaceReady(true);
+      selectCompany(loadedCompanies);
     }).catch((err) => {
       if (!cancelled) {
         setWorkspaceError(err instanceof Error ? err.message : 'Could not load your companies. Please refresh the page.');
+        setCompaniesReady(true);
         setWorkspaceReady(true);
       }
     });
@@ -111,12 +132,14 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authenticated, authReady]);
+  }, [authenticated, authReady, companiesReady, selectCompany]);
 
   const logout = () => {
     void api.logout().catch(() => undefined);
     clearCompanyId();
+    clearCompanyProfileCache();
     setCompanies([]);
+    setCompaniesReady(false);
     setActiveCompanyId('');
     setWorkspaceReady(false);
     setAuthenticated(false);
@@ -139,6 +162,7 @@ function App() {
 
   const handleAuthenticated = useCallback(() => {
     setWorkspaceReady(false);
+    setCompaniesReady(false);
     setAuthenticated(true);
   }, []);
 
@@ -209,21 +233,23 @@ function App() {
             <main key={activeCompanyId || 'default'} className="mobile-safe px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
               {permissionMessage && <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900"><span>{permissionMessage}</span><button type="button" className="text-amber-700 underline" onClick={() => setPermissionMessage('')}>Dismiss</button></div>}
               {workspaceError && <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"><span>{workspaceError}</span><button type="button" className="text-red-700 underline" onClick={() => setWorkspaceError('')}>Dismiss</button></div>}
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/purchases" element={<Purchases />} />
-                <Route path="/sales" element={<Sales />} />
-                <Route path="/payments" element={<Payments />} />
-                <Route path="/suppliers" element={<Suppliers />} />
-                <Route path="/customers" element={<Customers />} />
-                <Route path="/company" element={<Company />} />
-                <Route path="/members" element={<Members />} />
-                <Route path="/accept-invitation" element={<AcceptInvitation onAuthenticated={handleAuthenticated} />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/reset-password" element={<ResetPassword />} />
-                <Route path="/login" element={<Navigate to="/" replace />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
+              <Suspense fallback={<RouteLoading />}>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/purchases" element={<Purchases />} />
+                  <Route path="/sales" element={<Sales />} />
+                  <Route path="/payments" element={<Payments />} />
+                  <Route path="/suppliers" element={<Suppliers />} />
+                  <Route path="/customers" element={<Customers />} />
+                  <Route path="/company" element={<Company />} />
+                  <Route path="/members" element={<Members />} />
+                  <Route path="/accept-invitation" element={<AcceptInvitation onAuthenticated={handleAuthenticated} />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/reset-password" element={<ResetPassword />} />
+                  <Route path="/login" element={<Navigate to="/" replace />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
             </main>
           </div>
         </div>

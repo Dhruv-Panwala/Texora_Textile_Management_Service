@@ -5,6 +5,7 @@ const COMPANY_KEY = 'textile_company_id';
 export const AUTH_EXPIRED_EVENT = 'textile_auth_expired';
 export const PERMISSION_DENIED_EVENT = 'textile_permission_denied';
 let csrfToken: string | null = null;
+const companyProfileCache = new Map<string, CompanyProfile>();
 
 type ApiRequestOptions = RequestInit & {
   includeCompanyId?: boolean;
@@ -27,8 +28,18 @@ export function clearCompanyId() {
   localStorage.removeItem(COMPANY_KEY);
 }
 
+export function clearCompanyProfileCache() {
+  companyProfileCache.clear();
+}
+
+function cacheCompanyProfile(profile: CompanyProfile) {
+  companyProfileCache.set(String(profile.id), profile);
+  return profile;
+}
+
 function handleAuthExpired<T>(): Promise<T> {
   csrfToken = null;
+  clearCompanyProfileCache();
   window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
   return Promise.reject(new Error('Your session has expired.'));
 }
@@ -169,18 +180,40 @@ export const api = {
     }),
   removeWorkspaceMember: (workspaceId: number, userId: number) =>
     request<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
-  getCompanyProfiles: () => request<CompanyProfile[]>('/api/company/all', { includeCompanyId: false }),
-  createCompanyProfile: (profile: Pick<CompanyProfile, 'tradeName'> & Partial<CompanyProfile>) =>
-    request<CompanyProfile>('/api/company', { method: 'POST', body: JSON.stringify(profile) }),
-  getCompanyProfile: () => request<CompanyProfile>('/api/company'),
-  updateCompanyProfile: (profile: Partial<CompanyProfile>) =>
-    request<CompanyProfile>('/api/company', { method: 'PUT', body: JSON.stringify(profile) }),
+  getCompanyProfiles: async () => {
+    const profiles = await request<CompanyProfile[]>('/api/company/all', { includeCompanyId: false });
+    profiles.forEach(cacheCompanyProfile);
+    return profiles;
+  },
+  createCompanyProfile: async (profile: Pick<CompanyProfile, 'tradeName'> & Partial<CompanyProfile>) => {
+    const created = await request<CompanyProfile>('/api/company', { method: 'POST', body: JSON.stringify(profile) });
+    return cacheCompanyProfile(created);
+  },
+  getCompanyProfile: async () => {
+    const companyId = getCompanyId();
+    const cached = companyId ? companyProfileCache.get(companyId) : undefined;
+    if (cached) {
+      return cached;
+    }
+    const profile = await request<CompanyProfile>('/api/company');
+    return cacheCompanyProfile(profile);
+  },
+  updateCompanyProfile: async (profile: Partial<CompanyProfile>) => {
+    const updated = await request<CompanyProfile>('/api/company', { method: 'PUT', body: JSON.stringify(profile) });
+    return cacheCompanyProfile(updated);
+  },
   uploadCompanyLogo: (file: File) => {
     const body = new FormData();
     body.append('file', file);
-    return request<CompanyProfile>('/api/company/logo', { method: 'PUT', body });
+    return request<CompanyProfile>('/api/company/logo', { method: 'PUT', body }).then(cacheCompanyProfile);
   },
-  deleteCompanyLogo: () => request<void>('/api/company/logo', { method: 'DELETE' }),
+  deleteCompanyLogo: async () => {
+    await request<void>('/api/company/logo', { method: 'DELETE' });
+    const companyId = getCompanyId();
+    if (companyId) {
+      companyProfileCache.delete(companyId);
+    }
+  },
   getCompanyLogo: async () => {
     const companyId = getCompanyId();
     const requestPath = companyId ? withCompanyQuery('/api/company/logo', companyId) : '/api/company/logo';
