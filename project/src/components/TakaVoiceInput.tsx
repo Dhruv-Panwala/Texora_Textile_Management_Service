@@ -123,7 +123,12 @@ function parseNumber(value: string) {
 }
 
 function parseSpokenTaka(transcript: string): SpokenTaka | null {
-  const normalized = transcript.toLowerCase().replace(/[,:;]/g, ' ').replace(/\s+/g, ' ').trim();
+  const normalized = transcript
+    .toLowerCase()
+    .replace(/\.(?=\s|$)/g, ' ')
+    .replace(/[,:;]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const numberMatch = normalized.match(/(?:taka\s+)?(?:number|no)\s+(.+?)(?=\s+(?:taka\s+)?(?:meters?|metres?)\b|$)/);
   const metersMatch = normalized.match(/(?:taka\s+)?(?:meters?|metres?)\s+(.+)$/);
   if (!numberMatch || !metersMatch) {
@@ -143,48 +148,67 @@ function recognitionConstructor() {
 export function TakaVoiceInput({ onEntry }: { onEntry: (entry: SpokenTaka) => Promise<void> }) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const handledFinalRef = useRef(false);
+  const keepListeningRef = useRef(false);
+  const transcriptRef = useRef('');
   const [listening, setListening] = useState(false);
   const [saving, setSaving] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
   const supported = Boolean(recognitionConstructor());
 
-  useEffect(() => () => recognitionRef.current?.stop(), []);
+  useEffect(() => () => {
+    keepListeningRef.current = false;
+    recognitionRef.current?.stop();
+  }, []);
 
   const stopListening = () => {
+    keepListeningRef.current = false;
     recognitionRef.current?.stop();
     setListening(false);
   };
 
-  const startListening = () => {
+  const startListening = (continuing = false) => {
     const Constructor = recognitionConstructor();
     if (!Constructor) {
       setError('Voice capture is not supported in this browser. Enter the taka below manually.');
       return;
     }
     setError('');
-    setTranscript('');
-    handledFinalRef.current = false;
+    if (!continuing) {
+      setTranscript('');
+      transcriptRef.current = '';
+      handledFinalRef.current = false;
+      keepListeningRef.current = true;
+    }
     const recognition = new Constructor();
     recognition.lang = 'en-IN';
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.onresult = (event) => {
-      let spoken = '';
+      let finalized = '';
+      let interim = '';
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        spoken += event.results[index][0].transcript;
+        const spoken = event.results[index][0].transcript;
+        if (event.results[index].isFinal) {
+          finalized += spoken;
+        } else {
+          interim += spoken;
+        }
       }
-      setTranscript(spoken.trim());
-      const result = event.results[event.resultIndex];
-      if (!result?.isFinal || handledFinalRef.current) {
+      if (finalized) {
+        transcriptRef.current = `${transcriptRef.current} ${finalized}`.trim();
+      }
+      setTranscript(`${transcriptRef.current} ${interim}`.trim());
+      if (!finalized || handledFinalRef.current) {
+        return;
+      }
+      const entry = parseSpokenTaka(transcriptRef.current);
+      if (!entry) {
         return;
       }
       handledFinalRef.current = true;
-      const entry = parseSpokenTaka(spoken);
-      if (!entry) {
-        setError('Say: “taka number 123, taka metres 450.5”.');
-        return;
-      }
+      keepListeningRef.current = false;
+      recognition.stop();
       setSaving(true);
       void onEntry(entry)
         .then(() => setTranscript(`Saved taka ${entry.takaNo} with ${entry.meters} metres.`))
@@ -192,16 +216,34 @@ export function TakaVoiceInput({ onEntry }: { onEntry: (entry: SpokenTaka) => Pr
         .finally(() => setSaving(false));
     };
     recognition.onerror = (event) => {
+      if (event.error === 'no-speech' && keepListeningRef.current) {
+        return;
+      }
       setError(event.error === 'not-allowed' ? 'Microphone permission was denied.' : 'Voice capture failed. Please try again.');
+      keepListeningRef.current = false;
       setListening(false);
     };
     recognition.onend = () => {
       recognitionRef.current = null;
-      setListening(false);
+      if (keepListeningRef.current && !handledFinalRef.current) {
+        window.setTimeout(() => {
+          if (keepListeningRef.current) {
+            startListening(true);
+          }
+        }, 150);
+      } else {
+        setListening(false);
+      }
     };
     recognitionRef.current = recognition;
     setListening(true);
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      keepListeningRef.current = false;
+      setListening(false);
+      setError('Voice capture could not start. Please try again.');
+    }
   };
 
   return (
