@@ -71,6 +71,13 @@ export interface TakaEntry {
   meters: number;
 }
 
+export interface SavedTakaEntry {
+  id: number;
+  takaNo: number;
+  meters: number;
+  createdAt?: string;
+}
+
 export interface Sale {
   id: number;
   saleDate: string;

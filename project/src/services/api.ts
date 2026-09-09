@@ -1,4 +1,4 @@
-import type { CompanyProfile, InvitationCreated, WorkspaceMember, WorkspaceSummary, WorkspaceRole } from '../types';
+import type { CompanyProfile, InvitationCreated, SavedTakaEntry, WorkspaceMember, WorkspaceSummary, WorkspaceRole } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const COMPANY_KEY = 'textile_company_id';
@@ -180,6 +180,10 @@ export const api = {
     }),
   removeWorkspaceMember: (workspaceId: number, userId: number) =>
     request<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
+  getSavedTakaEntries: () => request<SavedTakaEntry[]>('/api/taka-entries'),
+  createSavedTakaEntry: (entry: Pick<SavedTakaEntry, 'takaNo' | 'meters'>) =>
+    request<SavedTakaEntry>('/api/taka-entries', { method: 'POST', body: JSON.stringify(entry) }),
+  deleteSavedTakaEntry: (id: number) => request<void>(`/api/taka-entries/${id}`, { method: 'DELETE' }),
   getCompanyProfiles: async () => {
     const profiles = await request<CompanyProfile[]>('/api/company/all', { includeCompanyId: false });
     profiles.forEach(cacheCompanyProfile);

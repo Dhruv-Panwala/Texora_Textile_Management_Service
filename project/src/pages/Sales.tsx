@@ -3,8 +3,9 @@ import { Download, FileText, Minus, Pencil, Plus, Trash } from 'lucide-react';
 import { format } from 'date-fns';
 import { api } from '../services/api';
 import { confirmDelete, downloadCsv } from '../utils/csv';
-import { Customer, PageResult, Sale, SaleListItem } from '../types';
+import { Customer, PageResult, Sale, SaleListItem, SavedTakaEntry } from '../types';
 import { SkeletonRows } from '../components/ui/LoadingSkeleton';
+import { SpokenTaka, TakaVoiceInput } from '../components/TakaVoiceInput';
 
 interface TakaDraft {
   takaNo: string;
@@ -27,6 +28,8 @@ function Sales() {
   const [error, setError] = useState('');
   const [sales, setSales] = useState<SaleListItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [savedTakas, setSavedTakas] = useState<SavedTakaEntry[]>([]);
+  const [savedTakasLoading, setSavedTakasLoading] = useState(true);
   const [isAddingNewSale, setIsAddingNewSale] = useState(false);
   const [newSale, setNewSale] = useState(emptySale);
   const [editingSaleId, setEditingSaleId] = useState<number | null>(null);
@@ -65,9 +68,44 @@ function Sales() {
     }
   }, []);
 
+  const loadSavedTakas = useCallback(async () => {
+    setSavedTakasLoading(true);
+    try {
+      setSavedTakas(await api.getSavedTakaEntries());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load saved taka entries');
+    } finally {
+      setSavedTakasLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void loadSales();
   }, [loadSales]);
+
+  useEffect(() => {
+    void loadSavedTakas();
+  }, [loadSavedTakas]);
+
+  const saveTaka = useCallback(async (entry: SpokenTaka) => {
+    try {
+      const saved = await api.createSavedTakaEntry(entry);
+      setSavedTakas((current) => [...current, saved].sort((left, right) => left.takaNo - right.takaNo));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not save taka entry';
+      setError(message);
+      throw new Error(message);
+    }
+  }, []);
+
+  const removeSavedTaka = useCallback(async (id: number) => {
+    try {
+      await api.deleteSavedTakaEntry(id);
+      setSavedTakas((current) => current.filter((entry) => entry.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove taka entry');
+    }
+  }, []);
 
   const totalMeters = useMemo(() => newSale.takaEntries.reduce((sum, t) => sum + Number(t.meters || 0), 0), [newSale.takaEntries]);
   const totalAmount = totalMeters * Number(newSale.rate || 0);
@@ -279,6 +317,15 @@ function Sales() {
           <Plus className="w-4 h-4" /> Add Taka
         </button>
       </div>
+
+      <SavedTakaPicker
+        takas={savedTakas}
+        loading={savedTakasLoading}
+        sale={sale}
+        setSale={setSale}
+        onCreate={saveTaka}
+        onDelete={removeSavedTaka}
+      />
     </>
   );
 
@@ -369,3 +416,77 @@ function Sales() {
 }
 
 export default Sales;
+
+type SaleDraft = typeof emptySale;
+
+function SavedTakaPicker({
+  takas,
+  loading,
+  sale,
+  setSale,
+  onCreate,
+  onDelete,
+}: {
+  takas: SavedTakaEntry[];
+  loading: boolean;
+  sale: SaleDraft;
+  setSale: React.Dispatch<React.SetStateAction<SaleDraft>>;
+  onCreate: (entry: SpokenTaka) => Promise<void>;
+  onDelete: (id: number) => Promise<void>;
+}) {
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+
+  const addSelected = () => {
+    const existing = new Set(sale.takaEntries.map((entry) => `${entry.takaNo}-${entry.meters}`));
+    const selected = takas.filter((entry) => selectedIds.includes(entry.id))
+      .filter((entry) => !existing.has(`${entry.takaNo}-${entry.meters}`));
+    if (selected.length === 0) {
+      return;
+    }
+    setSale((current) => ({
+      ...current,
+      takaEntries: [...current.takaEntries, ...selected.map((entry) => ({
+        takaNo: String(entry.takaNo),
+        meters: String(entry.meters),
+      }))],
+    }));
+    setSelectedIds([]);
+  };
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-stone-200 bg-white/60 p-4">
+      <div>
+        <div className="font-semibold text-stone-900">Saved taka library</div>
+        <p className="mt-1 text-sm text-stone-500">Capture a taka by voice once, then select it when preparing a challan or bill.</p>
+      </div>
+      <TakaVoiceInput onEntry={onCreate} />
+      {loading ? <p className="text-sm text-stone-500">Loading saved takas...</p> : takas.length === 0 ? (
+        <p className="text-sm text-stone-500">No saved takas yet.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {takas.map((entry) => (
+              <label key={entry.id} className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white/70 px-3 py-2 text-sm text-stone-700">
+                <input
+                  type="checkbox"
+                  className="!h-4 !w-4"
+                  checked={selectedIds.includes(entry.id)}
+                  onChange={() => setSelectedIds((current) => current.includes(entry.id)
+                    ? current.filter((id) => id !== entry.id)
+                    : [...current, entry.id])}
+                />
+                <span className="flex-1">Taka {entry.takaNo} · {entry.meters} m</span>
+                <button type="button" className="text-red-600 hover:text-red-800" title="Remove saved taka" onClick={() => void onDelete(entry.id)}>
+                  <Trash className="h-4 w-4" />
+                </button>
+              </label>
+            ))}
+          </div>
+          <button type="button" className="btn-secondary" disabled={selectedIds.length === 0} onClick={addSelected}>
+            Add selected takas to this sale
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
