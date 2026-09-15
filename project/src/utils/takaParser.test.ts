@@ -45,6 +45,16 @@ describe('parseTakaEntries', () => {
     ]);
   });
 
+  it('accepts Chrome clipping "taka" to "ka" between entries', () => {
+    expect(parseTakaEntries('Taka number 584. Taka metres 197. Ka number 119. Taka meters 450.25.')).toMatchObject({
+      entries: [
+        { takaNo: 584, meters: 197, rawText: '584 / 197' },
+        { takaNo: 119, meters: 450.25, rawText: '119 / 450.25' },
+      ],
+      issues: [],
+    });
+  });
+
   it('reports an issue when the taka format is missing', () => {
     expect(parseTakaEntries('hello there').entries).toHaveLength(0);
     expect(parseTakaEntries('hello there').issues).not.toHaveLength(0);

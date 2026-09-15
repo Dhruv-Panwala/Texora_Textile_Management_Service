@@ -1,96 +1,59 @@
-# Devashish Textile Management
+# Textile Manager
 
-Production-ready direction for the textile website:
+A full-stack business-management application for textile trading workflows. It supports multi-company operations, sales and purchase records, payments, printable challans/bills, and fast taka entry through voice capture or a reusable library.
 
-- React/Vite frontend in `project`
-- Spring Boot backend in `TextileManagement`
-- PostgreSQL persistence through Docker Compose
-- Server-side challan and bill PDF downloads from Spring Boot
+## Highlights
 
-## Local Development
+- Role-based, multi-company workspace with secure session authentication.
+- Sales, purchases, customers, suppliers, payments, and dashboard reporting.
+- Challan and bill PDF generation with financial-year numbering.
+- Voice-assisted taka capture with editable review and saved reusable taka entries.
+- Fixed-precision quantity handling, validation, audit logging, and optimistic concurrency checks.
 
-Backend (PowerShell):
+## Tech Stack
+
+- **Frontend:** React, TypeScript, Vite, Tailwind CSS
+- **Backend:** Java 17, Spring Boot, Spring Security, Spring Data JPA
+- **Data:** PostgreSQL with Flyway migrations; H2 for local development
+- **Testing:** Vitest, React Testing Library, JUnit, Mockito, Testcontainers
+
+## Run Locally
+
+Prerequisites: Node.js 20+, Java 17+, and Git.
+
+Start the backend:
 
 ```powershell
 cd TextileManagement
-$env:SPRING_PROFILES_ACTIVE="local"
+$env:SPRING_PROFILES_ACTIVE = "local"
 .\mvnw.cmd spring-boot:run
 ```
 
-Frontend:
+In a second terminal, start the frontend:
 
 ```powershell
 cd project
+npm ci
 npm run dev
 ```
 
-Local backend uses the `local` Spring profile and a file-backed H2 database, so data survives stopping and restarting the app. No default account is created; sign up locally, or explicitly enable development-only seeding with `APP_SEED_ENABLED=true`, `APP_FAMILY_USERNAME`, and `APP_FAMILY_PASSWORD`.
+Open the URL displayed by Vite. The local profile uses a file-backed H2 database and does not require production credentials.
 
-## Docker Compose
-
-Create a real `.env` from `.env.example`, set every required password/URL/secret, then run:
+## Tests
 
 ```powershell
-docker compose up --build
+cd project
+npm test
+
+cd ..\TextileManagement
+.\mvnw.cmd test
 ```
 
-Frontend: `http://localhost:3000`
+## Repository Layout
 
-Backend: `http://localhost:8080`
-
-PostgreSQL data is stored in the `postgres_data` Docker volume and survives container restarts.
-
-The app now supports two company profiles, `Devashish Textile` and `Ritika Creation`, with a sidebar dropdown to switch the active business context. Sales challan numbers, bill numbers, customers, suppliers, purchases, payments, dashboard totals, and PDF headers are all scoped to the selected company.
-
-Company settings and logos are restricted to workspace `OWNER` and `ADMIN` roles. `STAFF`, `ACCOUNTANT`, and `VIEWER` can use their permitted operational features but cannot mutate company settings.
-
-Sales numbering behavior:
-
-- Challan and bill numbers still track the financial year.
-- You can manually enter the starting challan number or bill number when launching mid-year.
-- Later auto-generated numbers continue from the highest number already used in that financial year.
-- If a sale has more than 48 takas, the app generates multiple challan pages for the same bill and uses a continuous challan range.
-
-## Database Modes
-
-- `local`: file-backed H2 in `TextileManagement/data/textile_management.mv.db`
-- `dev`: in-memory H2 for throwaway runs
-- `prod`: PostgreSQL via environment variables
-
-To switch to an online database later, set `SPRING_PROFILES_ACTIVE=prod` and provide `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
-
-The frontend now defaults to same-origin `/api` requests, with `VITE_API_BASE_URL` only needed when you deliberately host the backend on a separate origin. Login state uses an HttpOnly session cookie and is validated with the authenticated `/api/auth/bootstrap` request before protected data loads.
-
-## Env Files
-
-- `.env.example` is the safe template committed to git.
-- `.env` is your real local secret file and should stay out of git.
-
-## Prototype Folder
-
-- `Challan and Bill creation` is the old Python prototype.
-- Its Python dependencies now live in `Challan and Bill creation/requirements.txt`.
-- The live deployment uses the React frontend and Spring Boot backend only.
-
-## Server Checklist
-
-- Do not enable `APP_SEED_ENABLED` in production; production has no seeded account.
-- Keep `APP_SESSION_COOKIE_SECURE=true` in production and serve the backend over HTTPS.
-- Set `APP_CORS_ALLOWED_ORIGIN` to the public frontend URL.
-- Set `VITE_API_BASE_URL` to the public backend URL.
-- Use `/health` for production health checks.
-- For Cloudflare Pages + Cloud Run + Neon deployment steps, see `DEPLOYMENT.md`.
-- Keep PostgreSQL volume backups. Example:
-
-```powershell
-docker exec devashish_textile-postgres-1 pg_dump -U textile -d textile_management > backup.sql
+```text
+project/             React frontend
+TextileManagement/   Spring Boot API and database migrations
+deploy/              Deployment configuration
+scripts/             Development and benchmark utilities
 ```
-
-## Documents
-
-Each sale can download:
-
-- `GET /api/sales/{id}/challan.pdf`
-- `GET /api/sales/{id}/bill.pdf`
-
-The PDF renderer uses the same logo, Bappa, Mantra, A4 sizing, gold table styling, taka grouping, GST calculation, and footer structure as the original Python prototype.

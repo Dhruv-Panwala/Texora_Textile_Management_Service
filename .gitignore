@@ -30,10 +30,17 @@ artifacts/
 
 # Local tooling and OS metadata
 .idea/
-.vscode/*.local
+.vscode/
 .DS_Store
 Thumbs.db
 skills-lock.json
-.agents/skills/neon/SKILL.md
-.agents/skills/neon-postgres/SKILL.md
-.agents/skills/neon-postgres/references/neon-sdk.md
+
+# Private project notes and agent instructions; keep only the public README.
+*.md
+!/README.md
+/Docs/
+/AGENTS.md
+/.agents/
+/.codex/
+Docs/surat-textile-digital-business-strategy.pdf
+/DEPLOYMENT.md

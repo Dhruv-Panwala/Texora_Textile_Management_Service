@@ -148,7 +148,8 @@ export function parseSpokenNumber(value: string): number | null {
 
 export function parseTakaEntries(transcript: string): TakaParseResult {
   const normalizedTranscript = normalizeTranscript(transcript);
-  const numberLabels = findLabels(normalizedTranscript, /\b(?:taka\s+)?(?:number|no\.?|#)\b/g);
+  // ponytail: Chrome can clip the first syllable of "taka" between phrases.
+  const numberLabels = findLabels(normalizedTranscript, /\b(?:(?:taka|ka)\s+)?(?:number|no\.?|#)\b/g);
   const meterLabels = findLabels(normalizedTranscript, /\b(?:taka\s+)?met(?:er|re)s?\b/g);
   const entries: ParsedTakaEntry[] = [];
   const issues: string[] = [];
