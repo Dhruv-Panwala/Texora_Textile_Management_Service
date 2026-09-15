@@ -11,6 +11,7 @@ public record Payment(
         String entityName,
         String materialOrClothType,
         BigDecimal amount,
+        Long version,
         LocalDate paymentDate,
         String paymentMode,
         String chequeNo,

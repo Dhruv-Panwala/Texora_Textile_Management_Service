@@ -28,16 +28,16 @@ public class PasswordResetService {
     private final UserAccountRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final MailService mailService;
+    private final EmailOutboxService outboxService;
 
     public PasswordResetService(UserAccountRepository userRepository,
             PasswordResetTokenRepository tokenRepository,
             PasswordEncoder passwordEncoder,
-            MailService mailService) {
+            EmailOutboxService outboxService) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
-        this.mailService = mailService;
+        this.outboxService = outboxService;
     }
 
     @Transactional
@@ -57,7 +57,7 @@ public class PasswordResetService {
                     resetToken.setTokenHash(hashToken(token));
                     resetToken.setExpiresAt(LocalDateTime.now().plusMinutes(TOKEN_MINUTES));
                     tokenRepository.save(resetToken);
-                    mailService.sendPasswordReset(user.getEmail(), token);
+                    outboxService.enqueuePasswordReset(user.getEmail(), token);
                 });
     }
 

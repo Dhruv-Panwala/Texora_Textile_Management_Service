@@ -12,16 +12,13 @@ if exist "%ROOT%.env" (
 if not defined BACKEND_PORT set "BACKEND_PORT=8080"
 if not defined FRONTEND_PORT set "FRONTEND_PORT=5173"
 if not defined APP_CORS_ALLOWED_ORIGIN set "APP_CORS_ALLOWED_ORIGIN=http://localhost:%FRONTEND_PORT%"
+if not defined SPRING_PROFILES_ACTIVE set "SPRING_PROFILES_ACTIVE=local"
 
 echo Starting Textile Management locally...
 echo Backend:  http://localhost:%BACKEND_PORT%
 echo Frontend: http://localhost:%FRONTEND_PORT%
 echo.
-if defined APP_FAMILY_USERNAME (
-  echo Configured login username: %APP_FAMILY_USERNAME%
-) else (
-  echo Default login username: family
-)
+echo No default account is created. Sign up locally or provide explicit seed credentials.
 echo.
 
 where java >nul 2>nul

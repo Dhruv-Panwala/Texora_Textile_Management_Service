@@ -18,6 +18,7 @@ import com.example.TextileManagement.entities.CompanyProfile;
 import com.example.TextileManagement.entities.Customer;
 import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.example.TextileManagement.repository.CustomerRepository;
+import com.example.TextileManagement.service.VersionConflict;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
@@ -38,7 +39,8 @@ public class CustomerController {
     public PageResponse<Customer> getAllCustomers(@RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size) {
         return PageResponse.from(repository.findAllByCompany_Id(currentCompanyId(),
-                PageRequest.of(Math.max(0, page), boundedSize(size), Sort.by("name").ascending())));
+                PageRequest.of(Math.max(0, page), boundedSize(size),
+                        Sort.by("name").ascending().and(Sort.by("id").ascending()))));
     }
 
     @GetMapping("/{id}")
@@ -59,6 +61,7 @@ public class CustomerController {
     @PutMapping("/{id}")
     public ResponseEntity<Customer> updateCustomer(@PathVariable Long id, @RequestBody Customer request) {
         return repository.findByIdAndCompany_Id(id, currentCompanyId()).map(customer -> {
+            VersionConflict.requireCurrent(request.getVersion(), customer.getVersion());
             customer.setName(request.getName());
             customer.setContact(request.getContact());
             customer.setAddress(request.getAddress());

@@ -1,8 +1,11 @@
 package com.example.TextileManagement.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
+import java.math.BigDecimal;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +20,8 @@ class ChallanLayoutPlannerTest {
 
         assertEquals(List.of(1, 2), page.columns().get(0).stream().map(TakaEntry::getTakaNo).toList());
         assertEquals(List.of(3), page.columns().get(1).stream().map(TakaEntry::getTakaNo).toList());
-        assertEquals(1190d, page.columns().get(0).stream().mapToDouble(TakaEntry::getMeters).sum());
+        assertEquals(0, new BigDecimal("1190").compareTo(page.columns().get(0).stream()
+                .map(TakaEntry::getMeters).reduce(BigDecimal.ZERO, BigDecimal::add)));
     }
 
     @Test
@@ -29,10 +33,20 @@ class ChallanLayoutPlannerTest {
         assertEquals(2, ChallanLayoutPlanner.pageCount(takas, true));
     }
 
+    @Test
+    void rejectsAnUnboundedTakaList() {
+        List<TakaEntry> takas = IntStream.rangeClosed(1, ChallanLayoutPlanner.MAX_TAKA_ENTRIES + 1)
+                .mapToObj(number -> taka(number, 10))
+                .toList();
+
+        assertThrows(com.example.TextileManagement.config.InputLimitExceededException.class,
+                () -> ChallanLayoutPlanner.plan(takas, false));
+    }
+
     private TakaEntry taka(int takaNo, double meters) {
         TakaEntry taka = new TakaEntry();
         taka.setTakaNo(takaNo);
-        taka.setMeters(meters);
+        taka.setMeters(BigDecimal.valueOf(meters));
         return taka;
     }
 }

@@ -25,7 +25,8 @@ public record SaleListItem(
         String status,
         BigDecimal rate,
         BigDecimal amount,
-        Double totalMeters,
+        BigDecimal totalMeters,
+        Long version,
         LocalDateTime createdAt) {
 
     public static SaleListItem from(Sale sale) {
@@ -49,6 +50,7 @@ public record SaleListItem(
                 sale.getRate(),
                 sale.getAmount(),
                 sale.getTotalMeters(),
+                sale.getVersion(),
                 sale.getCreatedAt());
     }
 

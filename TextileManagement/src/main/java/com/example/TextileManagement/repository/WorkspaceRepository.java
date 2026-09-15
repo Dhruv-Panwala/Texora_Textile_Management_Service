@@ -22,4 +22,13 @@ public interface WorkspaceRepository extends JpaRepository<Workspace, Long> {
             order by w.name asc
             """)
     List<Workspace> findAllAccessibleByUsername(@Param("username") String username);
+
+    @Query("""
+            select w.id as id, w.name as name, member.role as role
+            from Workspace w
+            join WorkspaceMember member on member.workspace.id = w.id
+            where lower(member.user.username) = lower(:username)
+            order by w.name asc
+            """)
+    List<WorkspaceAccessProjection> findAccessibleWithRoleByUsername(@Param("username") String username);
 }

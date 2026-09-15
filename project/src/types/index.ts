@@ -6,6 +6,7 @@ export interface Customer {
   gstNo: string;
   brokerName?: string;
   deliveryAddress?: string;
+  version?: number;
   createdAt?: string;
 }
 
@@ -14,6 +15,7 @@ export interface Supplier {
   name: string;
   contact: string;
   address: string;
+  version?: number;
   createdAt?: string;
 }
 
@@ -28,6 +30,7 @@ export interface CompanyProfile {
   logoContentType?: string;
   logoWidth?: number;
   logoHeight?: number;
+  version?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -97,6 +100,7 @@ export interface Sale {
   rate: number;
   amount: number;
   totalMeters: number;
+  version?: number;
   takaEntries: TakaEntry[];
   createdAt?: string;
 }
@@ -119,6 +123,7 @@ export interface Purchase {
   paymentMode?: PaymentMode;
   chequeNo?: string;
   status: 'PENDING' | 'PAID';
+  version?: number;
   createdAt?: string;
 }
 
@@ -134,6 +139,7 @@ export interface Payment {
   entityName: string;
   materialOrClothType: string;
   amount: number;
+  version: number;
   paymentDate?: string;
   paymentMode?: PaymentMode;
   chequeNo?: string;
@@ -146,6 +152,7 @@ export interface PaymentUpdate {
   paymentDate: string;
   paymentMode: PaymentMode;
   chequeNo?: string;
+  version: number;
 }
 
 export interface DashboardSummary {

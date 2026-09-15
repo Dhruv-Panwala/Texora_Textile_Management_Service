@@ -15,6 +15,7 @@ function Customers() {
   const [isAddingCustomer, setIsAddingCustomer] = useState(false);
   const [newCustomer, setNewCustomer] = useState(emptyCustomer);
   const [editingCustomerId, setEditingCustomerId] = useState<number | null>(null);
+  const [editingCustomerVersion, setEditingCustomerVersion] = useState<number | undefined>();
   const [editingCustomer, setEditingCustomer] = useState(emptyCustomer);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -34,20 +35,23 @@ function Customers() {
   }, [page]);
   useEffect(() => { load(); }, [load]);
 
-  const customerPayload = (customer: typeof emptyCustomer) => ({
+  const customerPayload = (customer: typeof emptyCustomer, version?: number) => ({
     ...customer,
     contact: customer.contact.trim(),
     gstNo: customer.gstNo.trim().toUpperCase(),
+    ...(version === undefined ? {} : { version }),
   });
 
   const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
-      await api.post<Customer>('/api/customers', customerPayload(newCustomer));
+      const createdCustomer = await api.post<Customer>('/api/customers', customerPayload(newCustomer));
+      setCustomers((current) => page === 0
+        ? [...current, createdCustomer].sort((left, right) => left.name.localeCompare(right.name)).slice(0, 25)
+        : current);
       setNewCustomer(emptyCustomer);
       setIsAddingCustomer(false);
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save customer');
     }
@@ -55,6 +59,7 @@ function Customers() {
 
   const startEdit = (customer: Customer) => {
     setEditingCustomerId(customer.id);
+    setEditingCustomerVersion(customer.version);
     setEditingCustomer({
       name: customer.name || '',
       contact: customer.contact || '',
@@ -67,6 +72,7 @@ function Customers() {
 
   const cancelEdit = () => {
     setEditingCustomerId(null);
+    setEditingCustomerVersion(undefined);
     setEditingCustomer(emptyCustomer);
   };
 
@@ -77,9 +83,9 @@ function Customers() {
     }
     setError('');
     try {
-      await api.put<Customer>(`/api/customers/${editingCustomerId}`, customerPayload(editingCustomer));
+      const updatedCustomer = await api.put<Customer>(`/api/customers/${editingCustomerId}`, customerPayload(editingCustomer, editingCustomerVersion));
+      setCustomers((current) => current.map((customer) => customer.id === updatedCustomer.id ? updatedCustomer : customer));
       cancelEdit();
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update customer');
     }
@@ -92,7 +98,7 @@ function Customers() {
     setError('');
     try {
       await api.delete(`/api/customers/${customer.id}`);
-      await load();
+      setCustomers((current) => current.filter((currentCustomer) => currentCustomer.id !== customer.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete customer');
     }

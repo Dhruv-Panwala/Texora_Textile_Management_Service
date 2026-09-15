@@ -20,7 +20,7 @@ import jakarta.persistence.Query;
 public class PaymentQueryRepository {
     private static final String PENDING_PAYMENT_ROWS = """
             SELECT payment_type, source_id, source_date, due_date, entity_name,
-                   material_or_cloth_type, amount, payment_date, payment_mode, cheque_no, status
+                   material_or_cloth_type, amount, version, payment_date, payment_mode, cheque_no, status
             FROM (
                 SELECT 'TO_SUPPLIER' AS payment_type,
                        p.id AS source_id,
@@ -35,6 +35,7 @@ public class PaymentQueryRepository {
                            ELSE p.material_type
                        END AS material_or_cloth_type,
                        p.amount AS amount,
+                       p.version AS version,
                        p.payment_date AS payment_date,
                        p.payment_mode AS payment_mode,
                        p.cheque_no AS cheque_no,
@@ -52,6 +53,7 @@ public class PaymentQueryRepository {
                        c.name,
                        s.quality,
                        s.amount,
+                       s.version,
                        s.payment_date,
                        s.payment_mode,
                        s.cheque_no,
@@ -105,10 +107,11 @@ public class PaymentQueryRepository {
                 (String) row[4],
                 (String) row[5],
                 toBigDecimal(row[6]),
-                toNullableLocalDate(row[7]),
-                (String) row[8],
+                ((Number) row[7]).longValue(),
+                toNullableLocalDate(row[8]),
                 (String) row[9],
-                (String) row[10]);
+                (String) row[10],
+                (String) row[11]);
     }
 
     private LocalDate toNullableLocalDate(Object value) {

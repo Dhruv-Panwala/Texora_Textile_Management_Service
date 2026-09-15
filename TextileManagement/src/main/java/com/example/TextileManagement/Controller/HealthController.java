@@ -14,8 +14,8 @@ public class HealthController {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    @GetMapping("/health")
-    public ResponseEntity<HealthResponse> health() {
+    @GetMapping({"/health", "/health/ready"})
+    public ResponseEntity<HealthResponse> readiness() {
         try {
             jdbcTemplate.queryForObject("SELECT 1", Integer.class);
             return ResponseEntity.ok(new HealthResponse("UP", "UP"));
@@ -23,6 +23,11 @@ public class HealthController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(new HealthResponse("DOWN", "DOWN"));
         }
+    }
+
+    @GetMapping("/health/live")
+    public ResponseEntity<HealthResponse> liveness() {
+        return ResponseEntity.ok(new HealthResponse("UP", "UNKNOWN"));
     }
 
     public record HealthResponse(String status, String database) {

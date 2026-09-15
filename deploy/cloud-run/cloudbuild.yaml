@@ -1,0 +1,31 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$SHORT_SHA
+      - ./TextileManagement
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$SHORT_SHA
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        sed \
+          -e "s|PROJECT_ID|$PROJECT_ID|g" \
+          -e "s|IMAGE_PLACEHOLDER|${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$SHORT_SHA|g" \
+          deploy/cloud-run/service.yaml > /workspace/cloud-run-service.yaml
+        gcloud run services replace /workspace/cloud-run-service.yaml \
+          --project="$PROJECT_ID" \
+          --region="${_REGION}"
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$SHORT_SHA
+substitutions:
+  _REGION: europe-west1
+  _REPOSITORY: textile-management
+  _SERVICE: textile-backend
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,5 +1,6 @@
 package com.example.TextileManagement.controller;
 
+import java.time.Duration;
 import java.util.List;
 
 import org.springframework.http.CacheControl;
@@ -20,9 +21,16 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.Authentication;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.util.Iterator;
 import java.util.UUID;
 
 import com.example.TextileManagement.config.CurrentCompanyContext;
@@ -31,12 +39,15 @@ import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.example.TextileManagement.service.CompanyAccessService;
 import com.example.TextileManagement.service.WorkspaceRoleAccessService;
 import com.example.TextileManagement.service.PrivateObjectStorageService;
+import com.example.TextileManagement.service.VersionConflict;
 
 @RestController
 @RequestMapping("/api/company")
 public class CompanyController {
     private static final int MAX_LOGO_BYTES = 1024 * 1024;
     private static final int MAX_LOGO_DIMENSION = 2000;
+    private static final int MAX_SOURCE_LOGO_DIMENSION = 4000;
+    private static final long MAX_LOGO_PIXELS = 4_000_000L;
     private final CompanyProfileRepository repository;
     private final CurrentCompanyContext currentCompanyContext;
     private final CompanyAccessService companyAccessService;
@@ -73,15 +84,16 @@ public class CompanyController {
 
     @PutMapping
     public CompanyProfile updateCompanyProfile(@RequestBody CompanyProfile request, Authentication authentication) {
-        return updateCompanyProfile(currentCompanyId(), request, authentication);
+        return updateCompanyProfile(requireCompanySettingsAccess(authentication), request);
     }
 
-    @PutMapping("/{id}")
-    public CompanyProfile updateCompanyProfile(@PathVariable Long id, @RequestBody CompanyProfile request,
-            Authentication authentication) {
-        requireAccess(authentication, id);
+    private CompanyProfile updateCompanyProfile(Long id, CompanyProfile request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Company details are required");
+        }
         CompanyProfile profile = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company profile not found"));
+        VersionConflict.requireCurrent(request.getVersion(), profile.getVersion());
         String tradeName = request.getTradeName() == null ? "" : request.getTradeName().trim();
         if (tradeName.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Trade name is required");
@@ -99,8 +111,8 @@ public class CompanyController {
     }
 
     @PutMapping(value = "/logo", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public CompanyProfile updateCompanyLogo(@RequestParam("file") MultipartFile file) {
-        CompanyProfile profile = repository.findById(currentCompanyId())
+    public CompanyProfile updateCompanyLogo(@RequestParam("file") MultipartFile file, Authentication authentication) {
+        CompanyProfile profile = repository.findById(requireCompanySettingsAccess(authentication))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company profile not found"));
         LogoDetails logo = validateLogo(file);
         String oldStorageKey = profile.getLogoStorageKey();
@@ -129,7 +141,7 @@ public class CompanyController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company profile not found"));
         if (profile.getLogoStorageKey() != null && objectStorage.isEnabled()) {
             return ResponseEntity.ok()
-                    .cacheControl(CacheControl.noStore())
+                    .cacheControl(logoCacheControl())
                     .contentType(logoContentType(profile))
                     .body(objectStorage.read(profile.getLogoStorageKey()));
         }
@@ -137,14 +149,14 @@ public class CompanyController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok()
-                .cacheControl(CacheControl.noStore())
+                .cacheControl(logoCacheControl())
                 .contentType(logoContentType(profile))
                 .body(profile.getLogoData());
     }
 
     @DeleteMapping("/logo")
-    public ResponseEntity<Void> deleteCompanyLogo() {
-        CompanyProfile profile = repository.findById(currentCompanyId())
+    public ResponseEntity<Void> deleteCompanyLogo(Authentication authentication) {
+        CompanyProfile profile = repository.findById(requireCompanySettingsAccess(authentication))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Company profile not found"));
         if (profile.getLogoStorageKey() != null && objectStorage.isEnabled()) {
             objectStorage.delete(profile.getLogoStorageKey());
@@ -213,6 +225,16 @@ public class CompanyController {
         }
     }
 
+    private Long requireCompanySettingsAccess(Authentication authentication) {
+        Long companyId = currentCompanyId();
+        if (authentication == null
+                || !workspaceRoleAccessService.canManageCompanySettings(authentication.getName(), companyId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Owner or admin access is required to change company settings");
+        }
+        return companyId;
+    }
+
     private LogoDetails validateLogo(MultipartFile file) {
         if (file == null || file.isEmpty() || file.getSize() > MAX_LOGO_BYTES) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo must be a non-empty image up to 1 MB");
@@ -220,13 +242,39 @@ public class CompanyController {
         try {
             byte[] bytes = file.getBytes();
             String contentType = detectContentType(bytes);
-            BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
-            if (contentType == null || image == null
-                    || image.getWidth() > MAX_LOGO_DIMENSION || image.getHeight() > MAX_LOGO_DIMENSION) {
+            if (contentType == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Logo must be a PNG or JPEG no larger than 2000 x 2000 pixels");
             }
-            return new LogoDetails(bytes, contentType, image.getWidth(), image.getHeight());
+            try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+                if (input == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo could not be read");
+                }
+                Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo could not be read");
+                }
+                ImageReader reader = readers.next();
+                try {
+                    reader.setInput(input, true, true);
+                    int width = reader.getWidth(0);
+                    int height = reader.getHeight(0);
+                    if (width <= 0 || height <= 0 || width > MAX_SOURCE_LOGO_DIMENSION
+                            || height > MAX_SOURCE_LOGO_DIMENSION
+                            || (long) width * height > MAX_LOGO_PIXELS) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "Logo must be a bounded PNG or JPEG image no larger than 1 MB");
+                    }
+                    BufferedImage image = reader.read(0);
+                    if (image == null) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo could not be read");
+                    }
+                    LogoDetails resized = resizeLogo(image, contentType, width, height);
+                    return resized == null ? new LogoDetails(bytes, contentType, width, height) : resized;
+                } finally {
+                    reader.dispose();
+                }
+            }
         } catch (IOException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo could not be read");
         }
@@ -242,6 +290,42 @@ public class CompanyController {
             return "image/jpeg";
         }
         return null;
+    }
+
+    private LogoDetails resizeLogo(BufferedImage source, String contentType, int width, int height) {
+        if (width <= MAX_LOGO_DIMENSION && height <= MAX_LOGO_DIMENSION) {
+            return null;
+        }
+        double scale = Math.min((double) MAX_LOGO_DIMENSION / width, (double) MAX_LOGO_DIMENSION / height);
+        int targetWidth = Math.max(1, (int) Math.round(width * scale));
+        int targetHeight = Math.max(1, (int) Math.round(height * scale));
+        int imageType = "image/png".equals(contentType) ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+        BufferedImage resized = new BufferedImage(targetWidth, targetHeight, imageType);
+        Graphics2D graphics = resized.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            if (imageType == BufferedImage.TYPE_INT_RGB) {
+                graphics.setColor(Color.WHITE);
+                graphics.fillRect(0, 0, targetWidth, targetHeight);
+            }
+            graphics.drawImage(source, 0, 0, targetWidth, targetHeight, null);
+        } finally {
+            graphics.dispose();
+        }
+        String format = "image/png".equals(contentType) ? "png" : "jpg";
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            if (!ImageIO.write(resized, format, output)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo could not be encoded");
+            }
+            return new LogoDetails(output.toByteArray(), contentType, targetWidth, targetHeight);
+        } catch (IOException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Logo could not be encoded");
+        }
+    }
+
+    private CacheControl logoCacheControl() {
+        return CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable();
     }
 
     private record LogoDetails(byte[] bytes, String contentType, int width, int height) {

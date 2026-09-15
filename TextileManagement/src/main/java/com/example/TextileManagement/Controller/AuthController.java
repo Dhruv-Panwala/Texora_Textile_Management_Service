@@ -29,6 +29,11 @@ import com.example.TextileManagement.repository.WorkspaceMemberRepository;
 import com.example.TextileManagement.repository.WorkspaceRepository;
 import com.example.TextileManagement.security.AuthRateLimiter;
 import com.example.TextileManagement.security.AuthSessionDetails;
+import com.example.TextileManagement.security.ClientIpResolver;
+import com.example.TextileManagement.security.RequestAuthorizationFilter;
+import com.example.TextileManagement.repository.CompanyProfileSummary;
+import com.example.TextileManagement.repository.BootstrapAuthorizationProjection;
+import com.example.TextileManagement.repository.RequestAuthorizationProjection;
 import com.example.TextileManagement.service.PasswordResetService;
 import com.example.TextileManagement.service.WorkspaceCollaborationService;
 
@@ -44,6 +49,7 @@ public class AuthController {
     private final CompanyProfileRepository companyProfileRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final AuthRateLimiter authRateLimiter;
+    private final ClientIpResolver clientIpResolver;
     private final WorkspaceCollaborationService collaborationService;
     private final PasswordResetService passwordResetService;
     private final SecurityContextRepository securityContextRepository;
@@ -52,6 +58,7 @@ public class AuthController {
     public AuthController(UserAccountRepository userRepository, PasswordEncoder passwordEncoder,
             WorkspaceRepository workspaceRepository, CompanyProfileRepository companyProfileRepository,
             WorkspaceMemberRepository workspaceMemberRepository, AuthRateLimiter authRateLimiter,
+            ClientIpResolver clientIpResolver,
             WorkspaceCollaborationService collaborationService, PasswordResetService passwordResetService,
             SecurityContextRepository securityContextRepository,
             @Value("${app.auth.signup-enabled:true}") boolean signupEnabled) {
@@ -61,6 +68,7 @@ public class AuthController {
         this.companyProfileRepository = companyProfileRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.authRateLimiter = authRateLimiter;
+        this.clientIpResolver = clientIpResolver;
         this.collaborationService = collaborationService;
         this.passwordResetService = passwordResetService;
         this.securityContextRepository = securityContextRepository;
@@ -70,27 +78,25 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest,
             HttpServletResponse response) {
-        String rateLimitKey = rateLimitKey("login", httpRequest);
-        if (!authRateLimiter.allow(rateLimitKey)) {
+        String clientIp = clientIpResolver.resolve(httpRequest);
+        String username = request == null ? null : normalizeUsername(request.username());
+        String account = accountDimension(username);
+        if (authRateLimiter.isBlocked("login", account, clientIp)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
-        if (request == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        }
-        String username = normalizeUsername(request.username());
-        String password = request.password();
+        String password = request == null ? null : request.password();
         if (username == null || password == null || username.isBlank() || password.isBlank()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            return loginFailure(account, clientIp);
         }
         return userRepository.findByUsernameIgnoreCase(username)
                 .filter(user -> "ACTIVE".equalsIgnoreCase(user.getStatus()))
                 .filter(user -> passwordEncoder.matches(password, user.getPasswordHash()))
                 .map(user -> {
-                    authRateLimiter.clear(rateLimitKey);
+                    authRateLimiter.clearAccount("login", account);
                     authenticate(user, httpRequest, response);
                     return ResponseEntity.ok(new AuthResponse(user.getUsername()));
                 })
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+                .orElseGet(() -> loginFailure(account, clientIp));
     }
 
     @PostMapping("/signup")
@@ -101,24 +107,28 @@ public class AuthController {
             throw new org.springframework.web.server.ResponseStatusException(HttpStatus.GONE,
                     "Public account creation is temporarily closed; use an invitation link");
         }
-        String rateLimitKey = rateLimitKey("signup", httpRequest);
-        if (!authRateLimiter.allow(rateLimitKey)) {
+        String clientIp = clientIpResolver.resolve(httpRequest);
+        String email = request == null ? null : normalizeEmail(request.email());
+        String account = accountDimension(email);
+        if (authRateLimiter.isBlocked("signup", account, clientIp)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
         if (request == null) {
+            authRateLimiter.recordFailure("signup", account, clientIp);
             return ResponseEntity.badRequest().build();
         }
 
-        String email = normalizeEmail(request.email());
         String password = request.password();
         String displayName = trim(request.displayName());
         String workspaceName = trim(request.workspaceName());
         String businessName = trim(request.businessName());
         if (!validEmail(email) || password == null || password.length() < 12
                 || displayName.isBlank() || workspaceName.isBlank() || businessName.isBlank()) {
+            authRateLimiter.recordFailure("signup", account, clientIp);
             return ResponseEntity.badRequest().build();
         }
         if (userRepository.existsByUsernameIgnoreCase(email)) {
+            authRateLimiter.recordFailure("signup", account, clientIp);
             return ResponseEntity.status(HttpStatus.CONFLICT).build();
         }
 
@@ -147,7 +157,7 @@ public class AuthController {
         membership.setRole("OWNER");
         workspaceMemberRepository.save(membership);
 
-        authRateLimiter.clear(rateLimitKey);
+        authRateLimiter.clearAccount("signup", account);
         authenticate(user, httpRequest, response);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new AuthResponse(user.getUsername()));
@@ -156,40 +166,66 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<PasswordResetResponse> forgotPassword(@RequestBody PasswordResetRequest request,
             HttpServletRequest httpRequest) {
-        String ipKey = rateLimitKey("password-reset", httpRequest);
-        if (!authRateLimiter.allow(ipKey)) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
-        }
+        String clientIp = clientIpResolver.resolve(httpRequest);
         String email = request == null ? null : normalizeEmail(request.email());
-        if (validEmail(email) && !authRateLimiter.allow("password-reset-email:" + email)) {
+        String account = accountDimension(email);
+        if (authRateLimiter.isBlocked("password-reset", account, clientIp)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
         passwordResetService.requestReset(email);
+        authRateLimiter.recordFailure("password-reset", account, clientIp);
         return ResponseEntity.accepted().body(new PasswordResetResponse(
                 "If an account exists for that email, a reset link has been sent."));
     }
 
     @PostMapping("/reset-password")
     public ResponseEntity<Void> resetPassword(@RequestBody ResetPasswordRequest request, HttpServletRequest httpRequest) {
-        String rateLimitKey = rateLimitKey("password-reset-submit", httpRequest);
-        if (!authRateLimiter.allow(rateLimitKey)) {
+        String clientIp = clientIpResolver.resolve(httpRequest);
+        String account = "reset-token";
+        if (authRateLimiter.isBlocked("password-reset-submit", account, clientIp)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
-        passwordResetService.resetPassword(request == null ? null : request.token(),
-                request == null ? null : request.newPassword());
-        authRateLimiter.clear(rateLimitKey);
+        try {
+            passwordResetService.resetPassword(request == null ? null : request.token(),
+                    request == null ? null : request.newPassword());
+        } catch (RuntimeException exception) {
+            authRateLimiter.recordFailure("password-reset-submit", account, clientIp);
+            throw exception;
+        }
+        authRateLimiter.clearAccount("password-reset-submit", account);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> me(Authentication authentication) {
+    public ResponseEntity<UserResponse> me(Authentication authentication, HttpServletRequest request) {
         if (authentication == null || authentication.getName() == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        RequestAuthorizationProjection access = authorizationProjection(request);
+        if (access != null) {
+            return ResponseEntity.ok(new UserResponse(access.getUsername(), access.getDisplayName()));
         }
         return userRepository.findByUsernameIgnoreCase(authentication.getName())
                 .filter(user -> "ACTIVE".equalsIgnoreCase(user.getStatus()))
                 .map(user -> ResponseEntity.ok(new UserResponse(user.getUsername(), user.getDisplayName())))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+    }
+
+    @GetMapping("/bootstrap")
+    public ResponseEntity<BootstrapResponse> bootstrap(Authentication authentication, HttpServletRequest request) {
+        if (authentication == null || authentication.getName() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        RequestAuthorizationProjection access = authorizationProjection(request);
+        if (access == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        List<CompanyProfileSummary> companies = bootstrapCompanies(request);
+        if (companies == null) {
+            companies = companyProfileRepository.findAccessibleSummariesByUsername(authentication.getName());
+        }
+        return ResponseEntity.ok(new BootstrapResponse(
+                new UserResponse(access.getUsername(), access.getDisplayName()), companies));
     }
 
     @GetMapping("/csrf")
@@ -201,15 +237,22 @@ public class AuthController {
     @Transactional
     public ResponseEntity<AuthResponse> acceptInvitation(@RequestBody AcceptInvitationRequest request,
             HttpServletRequest httpRequest, HttpServletResponse response) {
-        String rateLimitKey = rateLimitKey("invitation", httpRequest);
-        if (!authRateLimiter.allow(rateLimitKey)) {
+        String clientIp = clientIpResolver.resolve(httpRequest);
+        String account = "invitation-token";
+        if (authRateLimiter.isBlocked("invitation", account, clientIp)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
         }
         if (request == null) {
             return ResponseEntity.badRequest().build();
         }
-        UserAccount user = collaborationService.acceptAsNewUser(request.token(), request.displayName(), request.password());
-        authRateLimiter.clear(rateLimitKey);
+        UserAccount user;
+        try {
+            user = collaborationService.acceptAsNewUser(request.token(), request.displayName(), request.password());
+        } catch (RuntimeException exception) {
+            authRateLimiter.recordFailure("invitation", account, clientIp);
+            throw exception;
+        }
+        authRateLimiter.clearAccount("invitation", account);
         authenticate(user, httpRequest, response);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new AuthResponse(user.getUsername()));
@@ -217,8 +260,19 @@ public class AuthController {
 
     @PostMapping("/invitations/accept-existing")
     public ResponseEntity<Void> acceptInvitationAsExistingUser(@RequestBody AcceptExistingInvitationRequest request,
-            Authentication authentication) {
-        collaborationService.acceptAsExistingUser(request == null ? null : request.token(), authentication.getName());
+            Authentication authentication, HttpServletRequest httpRequest) {
+        String clientIp = clientIpResolver.resolve(httpRequest);
+        String account = "invitation-token";
+        if (authRateLimiter.isBlocked("invitation", account, clientIp)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
+        }
+        try {
+            collaborationService.acceptAsExistingUser(request == null ? null : request.token(), authentication.getName());
+        } catch (RuntimeException exception) {
+            authRateLimiter.recordFailure("invitation", account, clientIp);
+            throw exception;
+        }
+        authRateLimiter.clearAccount("invitation", account);
         return ResponseEntity.noContent().build();
     }
 
@@ -252,8 +306,35 @@ public class AuthController {
         return slug.isBlank() ? "workspace" : slug;
     }
 
-    private String rateLimitKey(String action, HttpServletRequest request) {
-        return action + ":" + request.getRemoteAddr();
+    private ResponseEntity<AuthResponse> loginFailure(String account, String clientIp) {
+        authRateLimiter.recordFailure("login", account, clientIp);
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+    }
+
+    private RequestAuthorizationProjection authorizationProjection(HttpServletRequest request) {
+        Object value = request.getAttribute(RequestAuthorizationFilter.AUTHORIZATION_ATTRIBUTE);
+        return value instanceof RequestAuthorizationProjection projection ? projection : null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<CompanyProfileSummary> bootstrapCompanies(HttpServletRequest request) {
+        Object value = request.getAttribute(RequestAuthorizationFilter.BOOTSTRAP_ATTRIBUTE);
+        if (!(value instanceof List<?> rows)) {
+            return null;
+        }
+        return rows.stream()
+                .filter(BootstrapAuthorizationProjection.class::isInstance)
+                .map(BootstrapAuthorizationProjection.class::cast)
+                .filter(row -> row.getId() != null)
+                .map(row -> (CompanyProfileSummary) row)
+                .toList();
+    }
+
+    private String accountDimension(String normalizedAccount) {
+        if (normalizedAccount == null || normalizedAccount.isBlank() || normalizedAccount.length() > 254) {
+            return "invalid-account";
+        }
+        return normalizedAccount.toLowerCase(java.util.Locale.ROOT);
     }
 
     public record LoginRequest(String username, String password) {
@@ -278,6 +359,9 @@ public class AuthController {
     }
 
     public record UserResponse(String username, String displayName) {
+    }
+
+    public record BootstrapResponse(UserResponse user, List<CompanyProfileSummary> companies) {
     }
 
     public record AcceptInvitationRequest(String token, String displayName, String password) {

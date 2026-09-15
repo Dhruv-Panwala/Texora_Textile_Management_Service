@@ -9,19 +9,19 @@ function Members() {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [workspaceId, setWorkspaceId] = useState<number | null>(null);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
+  const [membersPage, setMembersPage] = useState(0);
+  const [membersTotalPages, setMembersTotalPages] = useState(0);
+  const [membersTotalElements, setMembersTotalElements] = useState(0);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Exclude<WorkspaceRole, 'OWNER'>>('STAFF');
   const [invitation, setInvitation] = useState<InvitationCreated | null>(null);
   const [loading, setLoading] = useState(true);
+  const [membersLoading, setMembersLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
   const workspace = useMemo(() => workspaces.find((item) => item.id === workspaceId), [workspaces, workspaceId]);
   const canManage = workspace?.role === 'OWNER' || workspace?.role === 'ADMIN';
-
-  const loadMembers = async (id: number) => {
-    setMembers(await api.getWorkspaceMembers(id));
-  };
 
   useEffect(() => {
     api.getWorkspaces()
@@ -37,8 +37,16 @@ function Members() {
     if (workspaceId == null) {
       return;
     }
-    loadMembers(workspaceId).catch((err) => setError(err instanceof Error ? err.message : 'Failed to load members'));
-  }, [workspaceId]);
+    setMembersLoading(true);
+    api.getWorkspaceMembers(workspaceId, membersPage)
+      .then((result) => {
+        setMembers(result.content);
+        setMembersTotalPages(result.totalPages);
+        setMembersTotalElements(result.totalElements);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load members'))
+      .finally(() => setMembersLoading(false));
+  }, [workspaceId, membersPage]);
 
   const invite = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -59,7 +67,9 @@ function Members() {
     if (!workspaceId || nextRole === 'OWNER') return;
     try {
       await api.updateWorkspaceMemberRole(workspaceId, member.userId, nextRole);
-      await loadMembers(workspaceId);
+      setMembers((current) => current.map((item) => item.userId === member.userId
+        ? { ...item, role: nextRole }
+        : item));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update role');
     }
@@ -69,7 +79,13 @@ function Members() {
     if (!workspaceId || !window.confirm(`Remove ${member.displayName || member.email || member.username}?`)) return;
     try {
       await api.removeWorkspaceMember(workspaceId, member.userId);
-      await loadMembers(workspaceId);
+      const nextTotal = Math.max(0, membersTotalElements - 1);
+      setMembers((current) => current.filter((item) => item.userId !== member.userId));
+      setMembersTotalElements(nextTotal);
+      setMembersTotalPages(Math.ceil(nextTotal / 25));
+      if (membersPage > 0 && members.length <= 1) {
+        setMembersPage((current) => Math.max(0, current - 1));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove member');
     }
@@ -102,7 +118,7 @@ function Members() {
       {message && <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{message}</div>}
 
       {workspaces.length > 1 && (
-        <select className="max-w-md border rounded-md px-3 py-2" value={workspaceId || ''} onChange={(event) => setWorkspaceId(Number(event.target.value))}>
+        <select className="max-w-md border rounded-md px-3 py-2" value={workspaceId || ''} onChange={(event) => { setWorkspaceId(Number(event.target.value)); setMembersPage(0); }}>
           {workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       )}
@@ -132,7 +148,7 @@ function Members() {
         </div>
       </div>
 
-      <div className="table-surface overflow-x-auto"><table className="data-table"><thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead><tbody>{members.map((member) => <tr key={member.userId}><td>{member.displayName || member.username}</td><td>{member.email || member.username}</td><td>{canManage && member.role !== 'OWNER' ? <select className="border rounded-md px-2 py-1" value={member.role} onChange={(event) => changeRole(member, event.target.value as WorkspaceRole)}>{roles.map((item) => <option key={item}>{item}</option>)}</select> : member.role}</td><td>{member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '-'}</td><td>{canManage && member.role !== 'OWNER' && <button title="Remove member" className="text-red-600 hover:text-red-800" onClick={() => remove(member)}><UserRoundMinus className="h-5 w-5" /></button>}</td></tr>)}</tbody></table></div>
+      <div className="table-surface overflow-x-auto"><table className="data-table"><thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th><th>Actions</th></tr></thead><tbody>{membersLoading && members.length === 0 ? <tr><td colSpan={5} className="p-6 text-sm text-stone-500">Loading members...</td></tr> : members.map((member) => <tr key={member.userId}><td>{member.displayName || member.username}</td><td>{member.email || member.username}</td><td>{canManage && member.role !== 'OWNER' ? <select className="border rounded-md px-2 py-1" value={member.role} onChange={(event) => changeRole(member, event.target.value as WorkspaceRole)}>{roles.map((item) => <option key={item}>{item}</option>)}</select> : member.role}</td><td>{member.createdAt ? new Date(member.createdAt).toLocaleDateString() : '-'}</td><td>{canManage && member.role !== 'OWNER' && <button title="Remove member" className="text-red-600 hover:text-red-800" onClick={() => void remove(member)}><UserRoundMinus className="h-5 w-5" /></button>}</td></tr>)}</tbody></table>{membersTotalPages > 1 && <div className="flex items-center justify-between p-4 text-sm text-stone-600"><button type="button" className="btn-secondary" disabled={membersPage === 0 || membersLoading} onClick={() => setMembersPage((current) => current - 1)}>Previous</button><span>Page {membersPage + 1} of {membersTotalPages}</span><button type="button" className="btn-secondary" disabled={membersPage + 1 >= membersTotalPages || membersLoading} onClick={() => setMembersPage((current) => current + 1)}>Next</button></div>}</div>
     </div>
   );
 }

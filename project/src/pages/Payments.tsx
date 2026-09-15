@@ -6,7 +6,7 @@ import { downloadCsv } from '../utils/csv';
 import { PageResult, Payment, PaymentUpdate } from '../types';
 import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 
-const emptyPayment: PaymentUpdate = { paymentDate: '', paymentMode: 'CASH', chequeNo: '' };
+const emptyPayment: PaymentUpdate = { paymentDate: '', paymentMode: 'CASH', chequeNo: '', version: 0 };
 
 function Payments() {
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -40,7 +40,7 @@ function Payments() {
 
   const openPaymentForm = (payment: Payment) => {
     setActivePayment(payment);
-    setPaymentDetails({ ...emptyPayment, paymentDate: payment.sourceDate });
+    setPaymentDetails({ ...emptyPayment, paymentDate: payment.sourceDate, version: payment.version });
   };
 
   const markPaid = async (event: React.FormEvent) => {
@@ -55,9 +55,16 @@ function Payments() {
         activePayment.type === 'TO_SUPPLIER' ? `/api/purchases/${activePayment.sourceId}/paid` : `/api/sales/${activePayment.sourceId}/paid`,
         paymentDetails,
       );
+      const pageWillBeEmpty = payments.length === 1;
+      setPayments((current) => current.filter((payment) =>
+        !(payment.type === activePayment.type && payment.sourceId === activePayment.sourceId)));
+      if (pageWillBeEmpty && page > 0) {
+        setPage((current) => current - 1);
+      } else if (pageWillBeEmpty && page === totalPages - 1) {
+        setTotalPages((current) => Math.max(1, current - 1));
+      }
       setActivePayment(null);
       setPaymentDetails(emptyPayment);
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update this payment');
     } finally {

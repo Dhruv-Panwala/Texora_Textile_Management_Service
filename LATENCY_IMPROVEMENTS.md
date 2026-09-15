@@ -153,7 +153,7 @@ Relevant files:
 
 ### Current state
 
-Sales and purchase list endpoints already use pagination, list projections, and company/date indexes. Dashboard queries already aggregate in the database instead of returning all rows.
+Sales and purchase list endpoints already use pagination, list projections, and company/date indexes. Dashboard queries already aggregate in the database instead of returning all rows. Customer and supplier lists, saved Taka entries, and workspace members use bounded pages with deterministic secondary ordering; the Sales picker exposes previous/next controls instead of loading the full company library in one response. Workspace member role/delete mutations update the visible page locally. Business many-to-one relations are lazy by default, with explicit fetch graphs on detail/update paths.
 
 ### Changes
 
@@ -199,4 +199,3 @@ Implementation should be validated with real timings rather than code inspection
 5. Add route-level code splitting.
 6. Optimize and cache versioned logo assets.
 7. Recheck PostgreSQL query plans with production-like data.
-

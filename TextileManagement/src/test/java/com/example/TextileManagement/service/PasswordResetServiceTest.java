@@ -34,13 +34,13 @@ class PasswordResetServiceTest {
     private PasswordEncoder passwordEncoder;
 
     @Mock
-    private MailService mailService;
+    private EmailOutboxService outboxService;
 
     private PasswordResetService service;
 
     @BeforeEach
     void setUp() {
-        service = new PasswordResetService(userRepository, tokenRepository, passwordEncoder, mailService);
+        service = new PasswordResetService(userRepository, tokenRepository, passwordEncoder, outboxService);
     }
 
     @Test
@@ -60,7 +60,7 @@ class PasswordResetServiceTest {
         org.mockito.Mockito.doAnswer(invocation -> {
             rawToken.set(invocation.getArgument(1));
             return null;
-        }).when(mailService).sendPasswordReset(any(), any());
+        }).when(outboxService).enqueuePasswordReset(any(), any());
 
         service.requestReset(" owner@example.com ");
 

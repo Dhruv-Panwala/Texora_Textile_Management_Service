@@ -1,2 +1,5 @@
-target
-.mvn/wrapper/dists
+target/
+data/
+*.log
+.env
+.env.*

@@ -13,6 +13,7 @@ const emptyPurchase = {
   quantity: '',
   rate: '',
   description: '',
+  version: undefined as number | undefined,
 };
 
 function Purchases() {
@@ -67,6 +68,7 @@ function Purchases() {
     quantity: Number(purchase.quantity),
     rate: Number(purchase.rate),
     description: purchase.description,
+    version: purchase.version,
   });
 
   const handleNewPurchase = async (e: React.FormEvent) => {
@@ -84,7 +86,6 @@ function Purchases() {
         : current);
       setIsAdding(false);
       setNewPurchase(emptyPurchase);
-      void loadPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save purchase');
     } finally {
@@ -93,7 +94,7 @@ function Purchases() {
     }
   };
 
-  const startEdit = (purchase: Purchase) => {
+  const startEdit = (purchase: PurchaseListItem) => {
     void loadSuppliers();
     setEditingPurchaseId(purchase.id);
     setEditingPurchase({
@@ -103,6 +104,7 @@ function Purchases() {
       quantity: String(purchase.quantity || ''),
       rate: String(purchase.rate || ''),
       description: purchase.description || '',
+      version: purchase.version,
     });
   };
 
@@ -119,7 +121,6 @@ function Purchases() {
       setPurchases((current) => current.map((purchase) => purchase.id === updatedPurchase.id ? updatedPurchase : purchase));
       setEditingPurchaseId(null);
       setEditingPurchase(emptyPurchase);
-      void loadPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update purchase');
     } finally {
@@ -136,7 +137,6 @@ function Purchases() {
     try {
       await api.delete(`/api/purchases/${purchase.id}`);
       setPurchases((current) => current.filter((currentPurchase) => currentPurchase.id !== purchase.id));
-      void loadPurchases();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete purchase');
     }

@@ -1,0 +1,9 @@
+.git/
+.env
+.env.*
+Challan and Bill creation/
+project/node_modules/
+project/dist/
+TextileManagement/target/
+TextileManagement/data/
+*.log

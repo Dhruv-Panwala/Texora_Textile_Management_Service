@@ -7,6 +7,7 @@ import java.util.List;
 import java.math.BigDecimal;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -18,7 +19,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
-import jakarta.persistence.OrderColumn;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -39,11 +40,14 @@ public class Sale {
 
     private LocalDate saleDate;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Customer customer;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id")
+    @ToString.Exclude
     private CompanyProfile company;
 
     private String brokerName;
@@ -62,13 +66,14 @@ public class Sale {
     private BigDecimal rate;
     @Column(precision = 19, scale = 2)
     private BigDecimal amount;
-    private Double totalMeters;
+    @Column(name = "total_meters", precision = 14, scale = 2)
+    private BigDecimal totalMeters;
     @Version
     private Long version;
     private LocalDateTime createdAt;
 
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderColumn(name = "entry_order")
+    @OrderBy("entryOrder ASC")
     @JsonManagedReference
     @ToString.Exclude
     private List<TakaEntry> takaEntries = new ArrayList<>();

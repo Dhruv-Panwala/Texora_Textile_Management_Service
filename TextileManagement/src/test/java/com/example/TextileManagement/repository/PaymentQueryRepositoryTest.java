@@ -118,7 +118,7 @@ class PaymentQueryRepositoryTest {
         purchase.setPurchaseDate(date);
         purchase.setDueDate(date.plusDays(45));
         purchase.setMaterialType("BEAM");
-        purchase.setQuantity(2.0);
+        purchase.setQuantity(new BigDecimal("2.00"));
         purchase.setRate(BigDecimal.valueOf(500));
         purchase.setAmount(BigDecimal.valueOf(1000));
         purchase.setStatus("PENDING");
@@ -133,7 +133,7 @@ class PaymentQueryRepositoryTest {
         sale.setRate(BigDecimal.valueOf(100));
         TakaEntry taka = new TakaEntry();
         taka.setTakaNo(1);
-        taka.setMeters(10.0);
+        taka.setMeters(new BigDecimal("10.00"));
         sale.setTakaEntries(new ArrayList<>(java.util.List.of(taka)));
         return sale;
     }

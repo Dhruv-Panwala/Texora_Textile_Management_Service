@@ -1,16 +1,21 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useLayoutEffect, useState } from 'react';
 import { ArrowLeft, KeyRound } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api } from '../services/api';
 
 function ResetPassword() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') || '';
+  const [token] = useState(() => new URLSearchParams(window.location.search).get('token') || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState(token ? '' : 'This reset link is missing its token.');
   const [loading, setLoading] = useState(false);
+
+  useLayoutEffect(() => {
+    if (token) {
+      window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.hash}`);
+    }
+  }, [token]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -27,6 +32,7 @@ function ResetPassword() {
     setLoading(true);
     try {
       await api.resetPassword(token, password);
+      // The token is intentionally kept only in component memory and is never restored to the URL.
       setMessage('Your password has been changed. You can now sign in.');
       setPassword('');
       setConfirmPassword('');

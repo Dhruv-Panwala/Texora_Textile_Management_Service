@@ -84,8 +84,8 @@ public class DashboardController {
         BigDecimal totalPurchases = purchases.amount();
         long saleCount = sales.count();
         long purchaseCount = purchases.count();
-        double totalMeters = sales.quantity();
-        double totalPurchaseQuantity = purchases.quantity();
+        BigDecimal totalMeters = sales.quantity();
+        BigDecimal totalPurchaseQuantity = purchases.quantity();
 
         return new PeriodTotals(
                 totalSales,
@@ -95,7 +95,7 @@ public class DashboardController {
                 purchaseCount,
                 totalMeters,
                 totalPurchaseQuantity,
-                totalMeters == 0 ? BigDecimal.ZERO : totalSales.divide(BigDecimal.valueOf(totalMeters), 2, RoundingMode.HALF_UP),
+                totalMeters.signum() == 0 ? BigDecimal.ZERO : totalSales.divide(totalMeters, 2, RoundingMode.HALF_UP),
                 saleCount == 0 ? BigDecimal.ZERO : totalSales.divide(BigDecimal.valueOf(saleCount), 2, RoundingMode.HALF_UP),
                 purchaseCount == 0 ? BigDecimal.ZERO : totalPurchases.divide(BigDecimal.valueOf(purchaseCount), 2, RoundingMode.HALF_UP));
     }
@@ -103,7 +103,7 @@ public class DashboardController {
     private Map<LocalDate, RawTotals> totalsByDate(List<Object[]> rows) {
         Map<LocalDate, RawTotals> totals = new HashMap<>();
         for (Object[] row : rows) {
-            totals.put((LocalDate) row[0], new RawTotals(decimal(row[1]), longValue(row[2]), number(row[3])));
+            totals.put((LocalDate) row[0], new RawTotals(decimal(row[1]), longValue(row[2]), decimal(row[3])));
         }
         return totals;
     }
@@ -111,7 +111,7 @@ public class DashboardController {
     private RawTotals totalsForRange(Map<LocalDate, RawTotals> totalsByDate, DateRange range) {
         BigDecimal amount = BigDecimal.ZERO;
         long count = 0;
-        double quantity = 0;
+        BigDecimal quantity = BigDecimal.ZERO;
         for (Map.Entry<LocalDate, RawTotals> entry : totalsByDate.entrySet()) {
             LocalDate date = entry.getKey();
             if (date.isBefore(range.start()) || date.isAfter(range.end())) {
@@ -120,7 +120,7 @@ public class DashboardController {
             RawTotals totals = entry.getValue();
             amount = amount.add(totals.amount());
             count += totals.count();
-            quantity += totals.quantity();
+            quantity = quantity.add(totals.quantity());
         }
         return new RawTotals(amount, count, quantity);
     }
@@ -177,10 +177,6 @@ public class DashboardController {
             return decimal;
         }
         return BigDecimal.valueOf(((Number) value).doubleValue()).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private double number(Object value) {
-        return value == null ? 0.0 : ((Number) value).doubleValue();
     }
 
     private long longValue(Object value) {
@@ -261,8 +257,8 @@ public class DashboardController {
             BigDecimal net,
             long saleCount,
             long purchaseCount,
-            double totalMeters,
-            double totalPurchaseQuantity,
+            BigDecimal totalMeters,
+            BigDecimal totalPurchaseQuantity,
             BigDecimal averageSalesRate,
             BigDecimal averageSaleValue,
             BigDecimal averagePurchaseValue) {
@@ -274,7 +270,7 @@ public class DashboardController {
     public record TrendPoint(String label, BigDecimal sales, BigDecimal purchases, BigDecimal net) {
     }
 
-    private record RawTotals(BigDecimal amount, long count, double quantity) {
+    private record RawTotals(BigDecimal amount, long count, BigDecimal quantity) {
     }
 
     private record OutstandingTotals(BigDecimal amount, long overdueCount) {

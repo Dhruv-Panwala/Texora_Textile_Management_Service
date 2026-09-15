@@ -16,14 +16,7 @@ import com.example.TextileManagement.entities.Sale;
 public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Override
     @EntityGraph(attributePaths = {"customer", "takaEntries", "company"})
-    List<Sale> findAll();
-
-    @Override
-    @EntityGraph(attributePaths = {"customer", "takaEntries", "company"})
     Optional<Sale> findById(Long id);
-
-    @EntityGraph(attributePaths = {"customer", "takaEntries", "company"})
-    List<Sale> findAllByCompany_Id(Long companyId);
 
     @EntityGraph(attributePaths = {"customer", "takaEntries", "company"})
     Page<Sale> findAllByCompany_Id(Long companyId, Pageable pageable);

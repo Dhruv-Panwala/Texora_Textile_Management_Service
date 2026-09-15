@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.FetchType;
@@ -18,6 +20,7 @@ import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 @Entity
 @Table(name = "purchases")
@@ -31,16 +34,20 @@ public class Purchase {
 
     private LocalDate purchaseDate;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @ToString.Exclude
     private Supplier supplier;
 
-    @ManyToOne(fetch = FetchType.EAGER)
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id")
+    @ToString.Exclude
     private CompanyProfile company;
 
     private String materialType;
     private String description;
-    private Double quantity;
+    @Column(precision = 14, scale = 2)
+    private BigDecimal quantity;
     @Column(precision = 19, scale = 2)
     private BigDecimal rate;
     @Column(precision = 19, scale = 2)

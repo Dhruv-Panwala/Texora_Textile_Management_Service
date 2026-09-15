@@ -9,8 +9,6 @@ import org.springframework.data.domain.Pageable;
 import com.example.TextileManagement.entities.Customer;
 
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
-    List<Customer> findAllByCompany_IdOrderByNameAsc(Long companyId);
-
     Page<Customer> findAllByCompany_Id(Long companyId, Pageable pageable);
 
     java.util.Optional<Customer> findByIdAndCompany_Id(Long id, Long companyId);

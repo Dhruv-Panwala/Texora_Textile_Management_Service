@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.example.TextileManagement.service.WorkspaceCollaborationService;
@@ -34,8 +35,11 @@ public class WorkspaceController {
     }
 
     @GetMapping("/{workspaceId}/members")
-    public List<MemberSummary> getMembers(@PathVariable Long workspaceId, Authentication authentication) {
-        return collaborationService.listMembers(workspaceId, authentication.getName());
+    public PageResponse<MemberSummary> getMembers(@PathVariable Long workspaceId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "25") int size,
+            Authentication authentication) {
+        return PageResponse.from(collaborationService.listMembers(workspaceId, authentication.getName(), page, size));
     }
 
     @PostMapping("/{workspaceId}/invitations")

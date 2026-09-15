@@ -9,10 +9,11 @@ Production-ready direction for the textile website:
 
 ## Local Development
 
-Backend:
+Backend (PowerShell):
 
 ```powershell
 cd TextileManagement
+$env:SPRING_PROFILES_ACTIVE="local"
 .\mvnw.cmd spring-boot:run
 ```
 
@@ -23,13 +24,11 @@ cd project
 npm run dev
 ```
 
-Local backend runs on the `local` Spring profile by default and uses a file-backed H2 database, so data now survives stopping and restarting the app.
-
-Default local login is `family` / `family123`. Change it with `APP_FAMILY_USERNAME` and `APP_FAMILY_PASSWORD`.
+Local backend uses the `local` Spring profile and a file-backed H2 database, so data survives stopping and restarting the app. No default account is created; sign up locally, or explicitly enable development-only seeding with `APP_SEED_ENABLED=true`, `APP_FAMILY_USERNAME`, and `APP_FAMILY_PASSWORD`.
 
 ## Docker Compose
 
-Create a real `.env` from `.env.example`, change every password/secret, then run:
+Create a real `.env` from `.env.example`, set every required password/URL/secret, then run:
 
 ```powershell
 docker compose up --build
@@ -42,6 +41,8 @@ Backend: `http://localhost:8080`
 PostgreSQL data is stored in the `postgres_data` Docker volume and survives container restarts.
 
 The app now supports two company profiles, `Devashish Textile` and `Ritika Creation`, with a sidebar dropdown to switch the active business context. Sales challan numbers, bill numbers, customers, suppliers, purchases, payments, dashboard totals, and PDF headers are all scoped to the selected company.
+
+Company settings and logos are restricted to workspace `OWNER` and `ADMIN` roles. `STAFF`, `ACCOUNTANT`, and `VIEWER` can use their permitted operational features but cannot mutate company settings.
 
 Sales numbering behavior:
 
@@ -58,7 +59,7 @@ Sales numbering behavior:
 
 To switch to an online database later, set `SPRING_PROFILES_ACTIVE=prod` and provide `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`.
 
-The frontend now defaults to same-origin `/api` requests, with `VITE_API_BASE_URL` only needed when you deliberately host the backend on a separate origin. Login state uses an HttpOnly session cookie and is validated against `GET /api/auth/me` before protected data loads.
+The frontend now defaults to same-origin `/api` requests, with `VITE_API_BASE_URL` only needed when you deliberately host the backend on a separate origin. Login state uses an HttpOnly session cookie and is validated with the authenticated `/api/auth/bootstrap` request before protected data loads.
 
 ## Env Files
 
@@ -73,12 +74,12 @@ The frontend now defaults to same-origin `/api` requests, with `VITE_API_BASE_UR
 
 ## Server Checklist
 
-- Use strong values for `APP_FAMILY_PASSWORD` and `POSTGRES_PASSWORD`.
+- Do not enable `APP_SEED_ENABLED` in production; production has no seeded account.
 - Keep `APP_SESSION_COOKIE_SECURE=true` in production and serve the backend over HTTPS.
 - Set `APP_CORS_ALLOWED_ORIGIN` to the public frontend URL.
 - Set `VITE_API_BASE_URL` to the public backend URL.
 - Use `/health` for production health checks.
-- For Cloudflare Pages + Koyeb + Neon deployment steps, see `DEPLOYMENT.md`.
+- For Cloudflare Pages + Cloud Run + Neon deployment steps, see `DEPLOYMENT.md`.
 - Keep PostgreSQL volume backups. Example:
 
 ```powershell

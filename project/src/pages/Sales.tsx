@@ -6,6 +6,7 @@ import { confirmDelete, downloadCsv } from '../utils/csv';
 import { Customer, PageResult, Sale, SaleListItem, SavedTakaEntry } from '../types';
 import { SkeletonRows } from '../components/ui/LoadingSkeleton';
 import { SpokenTaka, TakaVoiceInput } from '../components/TakaVoiceInput';
+import { MAX_TAKA_ENTRIES, validateTakaEntries } from '../utils/takaRules';
 
 interface TakaDraft {
   takaNo: string;
@@ -21,6 +22,7 @@ const emptySale = {
   billNo: '',
   balanceChallanColumnsByMeters: false,
   rate: '',
+  version: undefined as number | undefined,
   takaEntries: [{ takaNo: '', meters: '' }] as TakaDraft[],
 };
 
@@ -30,6 +32,9 @@ function Sales() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [savedTakas, setSavedTakas] = useState<SavedTakaEntry[]>([]);
   const [savedTakasLoading, setSavedTakasLoading] = useState(true);
+  const [savedTakasPage, setSavedTakasPage] = useState(0);
+  const [savedTakasTotalPages, setSavedTakasTotalPages] = useState(0);
+  const [savedTakasTotalElements, setSavedTakasTotalElements] = useState(0);
   const [isAddingNewSale, setIsAddingNewSale] = useState(false);
   const [newSale, setNewSale] = useState(emptySale);
   const [editingSaleId, setEditingSaleId] = useState<number | null>(null);
@@ -68,10 +73,14 @@ function Sales() {
     }
   }, []);
 
-  const loadSavedTakas = useCallback(async () => {
+  const loadSavedTakas = useCallback(async (requestedPage: number) => {
     setSavedTakasLoading(true);
     try {
-      setSavedTakas(await api.getSavedTakaEntries());
+      const result = await api.getSavedTakaEntries(requestedPage, 100);
+      setSavedTakas(result.content);
+      setSavedTakasPage(result.page);
+      setSavedTakasTotalPages(result.totalPages);
+      setSavedTakasTotalElements(result.totalElements);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load saved taka entries');
     } finally {
@@ -84,45 +93,88 @@ function Sales() {
   }, [loadSales]);
 
   useEffect(() => {
-    void loadSavedTakas();
-  }, [loadSavedTakas]);
+    void loadSavedTakas(savedTakasPage);
+  }, [loadSavedTakas, savedTakasPage]);
 
-  const saveTaka = useCallback(async (entry: SpokenTaka) => {
+  const saveTakas = useCallback(async (entries: SpokenTaka[]) => {
     try {
-      const saved = await api.createSavedTakaEntry(entry);
-      setSavedTakas((current) => [...current, saved].sort((left, right) => left.takaNo - right.takaNo));
+      const saved = await api.createSavedTakaEntries(entries);
+      setSavedTakasTotalElements((current) => current + saved.length);
+      setSavedTakasTotalPages((current) => Math.max(current, Math.ceil((savedTakasTotalElements + saved.length) / 100)));
+      if (savedTakasPage === 0) {
+        setSavedTakas((current) => [...current, ...saved]
+          .sort((left, right) => left.takaNo - right.takaNo || left.id - right.id)
+          .slice(0, 100));
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not save taka entry';
+      const message = err instanceof Error ? err.message : 'Could not save taka entries';
       setError(message);
       throw new Error(message);
     }
-  }, []);
+  }, [savedTakasPage, savedTakasTotalElements]);
 
   const removeSavedTaka = useCallback(async (id: number) => {
     try {
       await api.deleteSavedTakaEntry(id);
       setSavedTakas((current) => current.filter((entry) => entry.id !== id));
+      const nextTotal = Math.max(0, savedTakasTotalElements - 1);
+      setSavedTakasTotalElements(nextTotal);
+      setSavedTakasTotalPages(Math.ceil(nextTotal / 100));
+      if (savedTakasPage > 0 && savedTakas.length <= 1) {
+        setSavedTakasPage((current) => Math.max(0, current - 1));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove taka entry');
     }
-  }, []);
+  }, [savedTakas.length, savedTakasPage, savedTakasTotalElements]);
 
   const totalMeters = useMemo(() => newSale.takaEntries.reduce((sum, t) => sum + Number(t.meters || 0), 0), [newSale.takaEntries]);
   const totalAmount = totalMeters * Number(newSale.rate || 0);
   const editTotalMeters = useMemo(() => editingSale.takaEntries.reduce((sum, t) => sum + Number(t.meters || 0), 0), [editingSale.takaEntries]);
   const editTotalAmount = editTotalMeters * Number(editingSale.rate || 0);
 
-  const salePayload = (sale: typeof emptySale) => ({
-    saleDate: sale.saleDate || null,
-    customer: { id: Number(sale.customerId) },
-    brokerName: sale.brokerName,
-    quality: sale.quality,
-    challanNo: sale.challanNo ? Number(sale.challanNo) : null,
-    billNo: sale.billNo ? Number(sale.billNo) : null,
-    balanceChallanColumnsByMeters: sale.balanceChallanColumnsByMeters,
-    rate: Number(sale.rate),
-    takaEntries: sale.takaEntries.map((t) => ({ takaNo: Number(t.takaNo), meters: Number(t.meters) })),
-  });
+  const salePayload = (sale: typeof emptySale) => {
+    const takaEntries = sale.takaEntries.map((t) => ({ takaNo: Number(t.takaNo), meters: Number(t.meters) }));
+    const validationError = validateTakaEntries(takaEntries);
+    if (validationError) {
+      throw new Error(validationError);
+    }
+    return {
+      saleDate: sale.saleDate || null,
+      customer: { id: Number(sale.customerId) },
+      brokerName: sale.brokerName,
+      quality: sale.quality,
+      challanNo: sale.challanNo ? Number(sale.challanNo) : null,
+      billNo: sale.billNo ? Number(sale.billNo) : null,
+      balanceChallanColumnsByMeters: sale.balanceChallanColumnsByMeters,
+      rate: Number(sale.rate),
+      version: sale.version,
+      takaEntries,
+    };
+  };
+
+  const appendVoiceEntries = (
+    sale: typeof emptySale,
+    setSale: React.Dispatch<React.SetStateAction<typeof emptySale>>,
+    entries: SpokenTaka[],
+  ) => {
+    const hasOnlyBlankRow = sale.takaEntries.length === 1
+      && !sale.takaEntries[0].takaNo.trim()
+      && !sale.takaEntries[0].meters.trim();
+    const existing = hasOnlyBlankRow ? [] : sale.takaEntries.map((entry) => ({ takaNo: Number(entry.takaNo), meters: Number(entry.meters) }));
+    const validationError = validateTakaEntries([...existing, ...entries]);
+    if (validationError) {
+      setError(validationError);
+      throw new Error(validationError);
+    }
+    setSale({
+      ...sale,
+      takaEntries: (hasOnlyBlankRow ? [] : sale.takaEntries).concat(entries.map((entry) => ({
+        takaNo: String(entry.takaNo),
+        meters: String(entry.meters),
+      }))),
+    });
+  };
 
   const handleNewSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +191,6 @@ function Sales() {
         : current);
       setIsAddingNewSale(false);
       setNewSale(emptySale);
-      void loadSales();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save sale');
     } finally {
@@ -164,6 +215,7 @@ function Sales() {
         billNo: fullSale.billNo ? String(fullSale.billNo) : '',
         balanceChallanColumnsByMeters: fullSale.balanceChallanColumnsByMeters || false,
         rate: String(fullSale.rate || ''),
+        version: fullSale.version,
         takaEntries: fullSale.takaEntries?.length
           ? fullSale.takaEntries.map((taka) => ({ takaNo: String(taka.takaNo || ''), meters: String(taka.meters || '') }))
           : [{ takaNo: '', meters: '' }],
@@ -186,7 +238,6 @@ function Sales() {
       setSales((current) => current.map((sale) => sale.id === updatedSale.id ? updatedSale : sale));
       setEditingSaleId(null);
       setEditingSale(emptySale);
-      void loadSales();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update sale');
     } finally {
@@ -203,13 +254,16 @@ function Sales() {
     try {
       await api.delete(`/api/sales/${sale.id}`);
       setSales((current) => current.filter((currentSale) => currentSale.id !== sale.id));
-      void loadSales();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete sale');
     }
   };
 
   const addTakaField = (sale: typeof emptySale, setSale: React.Dispatch<React.SetStateAction<typeof emptySale>>) => {
+    if (sale.takaEntries.length >= MAX_TAKA_ENTRIES) {
+      setError(`You can add at most ${MAX_TAKA_ENTRIES} taka entries.`);
+      return;
+    }
     setSale({ ...sale, takaEntries: [...sale.takaEntries, { takaNo: '', meters: '' }] });
   };
 
@@ -304,6 +358,10 @@ function Sales() {
 
       <div className="space-y-2">
         <div className="font-semibold text-gray-700">Taka Entries</div>
+        <TakaVoiceInput
+          onEntriesConfirmed={(entries) => appendVoiceEntries(sale, setSale, entries)}
+          onSaveToLibrary={saveTakas}
+        />
         {sale.takaEntries.map((taka, index) => (
           <div key={index} className="grid grid-cols-[120px_1fr_40px] gap-2">
             <input type="number" min="1" className="border rounded-md px-3 py-2" placeholder="Taka no" value={taka.takaNo} onChange={(e) => updateTakaField(sale, setSale, index, 'takaNo', e.target.value)} required />
@@ -321,9 +379,11 @@ function Sales() {
       <SavedTakaPicker
         takas={savedTakas}
         loading={savedTakasLoading}
+        page={savedTakasPage}
+        totalPages={savedTakasTotalPages}
+        onPageChange={setSavedTakasPage}
         sale={sale}
         setSale={setSale}
-        onCreate={saveTaka}
         onDelete={removeSavedTaka}
       />
     </>
@@ -422,33 +482,56 @@ type SaleDraft = typeof emptySale;
 function SavedTakaPicker({
   takas,
   loading,
+  page,
+  totalPages,
+  onPageChange,
   sale,
   setSale,
-  onCreate,
   onDelete,
 }: {
   takas: SavedTakaEntry[];
   loading: boolean;
+  page: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
   sale: SaleDraft;
   setSale: React.Dispatch<React.SetStateAction<SaleDraft>>;
-  onCreate: (entry: SpokenTaka) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [validationError, setValidationError] = useState('');
+
+  useEffect(() => {
+    setSelectedIds([]);
+    setValidationError('');
+  }, [page]);
 
   const addSelected = () => {
-    const existing = new Set(sale.takaEntries.map((entry) => `${entry.takaNo}-${entry.meters}`));
+    const existing = new Set(sale.takaEntries.map((entry) => entry.takaNo));
     const selected = takas.filter((entry) => selectedIds.includes(entry.id))
-      .filter((entry) => !existing.has(`${entry.takaNo}-${entry.meters}`));
+      .filter((entry) => !existing.has(String(entry.takaNo)));
     if (selected.length === 0) {
       return;
     }
+    const combined = sale.takaEntries
+      .filter((entry) => entry.takaNo.trim() || entry.meters.trim())
+      .map((entry) => ({ takaNo: Number(entry.takaNo), meters: Number(entry.meters) }))
+      .concat(selected.map((entry) => ({ takaNo: entry.takaNo, meters: entry.meters })));
+    const error = validateTakaEntries(combined);
+    if (error) {
+      setValidationError(error);
+      return;
+    }
+    setValidationError('');
+    const hasOnlyBlankRow = sale.takaEntries.length === 1
+      && !sale.takaEntries[0].takaNo.trim()
+      && !sale.takaEntries[0].meters.trim();
     setSale((current) => ({
       ...current,
-      takaEntries: [...current.takaEntries, ...selected.map((entry) => ({
+      takaEntries: (hasOnlyBlankRow ? [] : current.takaEntries).concat(selected.map((entry) => ({
         takaNo: String(entry.takaNo),
         meters: String(entry.meters),
-      }))],
+      }))),
     }));
     setSelectedIds([]);
   };
@@ -459,8 +542,7 @@ function SavedTakaPicker({
         <div className="font-semibold text-stone-900">Saved taka library</div>
         <p className="mt-1 text-sm text-stone-500">Capture a taka by voice once, then select it when preparing a challan or bill.</p>
       </div>
-      <TakaVoiceInput onEntry={onCreate} />
-      {loading ? <p className="text-sm text-stone-500">Loading saved takas...</p> : takas.length === 0 ? (
+      {loading && takas.length === 0 ? <p className="text-sm text-stone-500">Loading saved takas...</p> : takas.length === 0 ? (
         <p className="text-sm text-stone-500">No saved takas yet.</p>
       ) : (
         <>
@@ -485,6 +567,12 @@ function SavedTakaPicker({
           <button type="button" className="btn-secondary" disabled={selectedIds.length === 0} onClick={addSelected}>
             Add selected takas to this sale
           </button>
+          {totalPages > 1 && <div className="flex items-center justify-between text-sm text-stone-600">
+            <button type="button" className="btn-secondary" disabled={page === 0 || loading} onClick={() => onPageChange(page - 1)}>Previous</button>
+            <span>Page {page + 1} of {totalPages}</span>
+            <button type="button" className="btn-secondary" disabled={page + 1 >= totalPages || loading} onClick={() => onPageChange(page + 1)}>Next</button>
+          </div>}
+          {validationError && <p className="text-xs text-red-700" role="alert">{validationError}</p>}
         </>
       )}
     </div>

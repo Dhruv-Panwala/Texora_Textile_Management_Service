@@ -10,6 +10,7 @@ const emptyProfile = {
   address: '',
   defaultBroker: '',
   defaultQuality: '',
+  version: undefined as number | undefined,
 };
 
 function Company() {
@@ -44,6 +45,7 @@ function Company() {
         address: data.address || '',
         defaultBroker: data.defaultBroker || '',
         defaultQuality: data.defaultQuality || '',
+        version: data.version,
       });
       setLogoFile(null);
     } catch (err) {
@@ -127,6 +129,7 @@ function Company() {
         address: profile.address.trim(),
         defaultBroker: profile.defaultBroker.trim(),
         defaultQuality: profile.defaultQuality.trim(),
+        version: profile.version,
       };
       const updated = await api.updateCompanyProfile(payload);
       setProfile({
@@ -136,6 +139,7 @@ function Company() {
         address: updated.address || '',
         defaultBroker: updated.defaultBroker || '',
         defaultQuality: updated.defaultQuality || '',
+        version: updated.version,
       });
       setMessage('Company profile updated');
     } catch (err) {
@@ -207,7 +211,7 @@ function Company() {
       <section className="form-surface max-w-4xl mt-4 space-y-4">
         <div>
           <h2 className="text-lg font-bold text-stone-900">Bill & Challan Logo</h2>
-          <p className="text-sm text-stone-500">PNG or JPEG, up to 1 MB and 2000 x 2000 px. The PDF keeps the full logo inside the exact 72 x 72 pt header area.</p>
+          <p className="text-sm text-stone-500">PNG or JPEG, up to 1 MB. Oversized images are resized for fast previews while retaining high-quality PDF output.</p>
         </div>
         {logoError && <div role="alert" className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded p-2">{logoError}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">

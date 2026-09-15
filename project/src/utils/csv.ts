@@ -6,11 +6,18 @@ export interface CsvColumn<T> {
 }
 
 function escapeCsv(value: CsvValue) {
-  const text = value == null ? '' : String(value);
+  const text = safeSpreadsheetValue(value);
   if (!/[",\r\n]/.test(text)) {
     return text;
   }
   return `"${text.replace(/"/g, '""')}"`;
+}
+
+function safeSpreadsheetValue(value: CsvValue) {
+  if (value == null || typeof value !== 'string') {
+    return value == null ? '' : String(value);
+  }
+  return /^[\t\r ]*[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
 export function downloadCsv<T>(filename: string, rows: T[], columns: CsvColumn<T>[]) {

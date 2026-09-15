@@ -10,7 +10,7 @@ public record PurchaseListItem(
         SupplierSummary supplier,
         String materialType,
         String description,
-        Double quantity,
+        BigDecimal quantity,
         BigDecimal rate,
         BigDecimal amount,
         LocalDate dueDate,
@@ -18,6 +18,7 @@ public record PurchaseListItem(
         String paymentMode,
         String chequeNo,
         String status,
+        Long version,
         LocalDateTime createdAt) {
 
     public PurchaseListItem(
@@ -27,7 +28,7 @@ public record PurchaseListItem(
             String supplierName,
             String materialType,
             String description,
-            Double quantity,
+            BigDecimal quantity,
             BigDecimal rate,
             BigDecimal amount,
             LocalDate dueDate,
@@ -35,9 +36,10 @@ public record PurchaseListItem(
             String paymentMode,
             String chequeNo,
             String status,
+            Long version,
             LocalDateTime createdAt) {
         this(id, purchaseDate, new SupplierSummary(supplierId, supplierName), materialType, description,
-                quantity, rate, amount, dueDate, paymentDate, paymentMode, chequeNo, status, createdAt);
+                quantity, rate, amount, dueDate, paymentDate, paymentMode, chequeNo, status, version, createdAt);
     }
 
     public record SupplierSummary(Long id, String name) {

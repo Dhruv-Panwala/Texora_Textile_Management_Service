@@ -8,7 +8,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
 import com.example.TextileManagement.entities.CompanyProfile;
+import com.example.TextileManagement.entities.Workspace;
 import com.example.TextileManagement.repository.CompanyProfileRepository;
+import com.example.TextileManagement.repository.WorkspaceRepository;
 
 @SpringBootTest
 @ActiveProfiles("dev")
@@ -19,10 +21,21 @@ class BusinessNumberSequenceServiceTest {
     @Autowired
     private CompanyProfileRepository companyProfileRepository;
 
+    @Autowired
+    private WorkspaceRepository workspaceRepository;
+
     @Test
     void numbersResetPerFinancialYearAndManualNumbersAdvanceTheSequence() {
-        CompanyProfile company = companyProfileRepository.findByTradeNameIgnoreCase("Devashish Textile")
-                .orElseThrow();
+        Workspace workspace = new Workspace();
+        workspace.setName("Business number test workspace");
+        workspace.setSlug("business-number-test-workspace");
+        workspace.setStatus("ACTIVE");
+        workspace = workspaceRepository.saveAndFlush(workspace);
+
+        CompanyProfile company = new CompanyProfile();
+        company.setTradeName("Business number test company");
+        company.setWorkspace(workspace);
+        company = companyProfileRepository.saveAndFlush(company);
 
         BusinessNumberSequenceService.AllocatedNumbers first = sequenceService.reserve(
                 company.getId(), "2099-2100", null, null, true, true, 2);

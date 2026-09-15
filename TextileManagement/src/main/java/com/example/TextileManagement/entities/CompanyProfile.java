@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 @Entity
 @Table(name = "company_profiles")
@@ -33,7 +34,13 @@ public class CompanyProfile {
     @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "workspace_id", nullable = false)
+    @ToString.Exclude
     private Workspace workspace;
+
+    @JsonIgnore
+    public Workspace getWorkspace() {
+        return workspace;
+    }
 
     @Column(nullable = false)
     private String tradeName;

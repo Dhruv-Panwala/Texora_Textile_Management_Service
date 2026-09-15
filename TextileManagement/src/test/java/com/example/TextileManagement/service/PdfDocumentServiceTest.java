@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Optional;
 
@@ -38,7 +39,7 @@ class PdfDocumentServiceTest {
         when(companyProfileRepository.findFirstByOrderByIdAsc()).thenReturn(Optional.of(company));
 
         byte[] pdf = new PdfDocumentService(companyProfileRepository, currentCompanyContext,
-                org.mockito.Mockito.mock(PrivateObjectStorageService.class)).generateChallan(sale);
+                org.mockito.Mockito.mock(PrivateObjectStorageService.class), 200, 20).generateChallan(sale);
 
         PdfReader reader = new PdfReader(pdf);
         assertEquals(2, reader.getNumberOfPages());
@@ -61,7 +62,7 @@ class PdfDocumentServiceTest {
         when(companyProfileRepository.findFirstByOrderByIdAsc()).thenReturn(Optional.of(company));
 
         byte[] pdf = new PdfDocumentService(companyProfileRepository, currentCompanyContext,
-                org.mockito.Mockito.mock(PrivateObjectStorageService.class)).generateChallan(sale);
+                org.mockito.Mockito.mock(PrivateObjectStorageService.class), 200, 20).generateChallan(sale);
 
         PdfReader reader = new PdfReader(pdf);
         assertEquals(1, reader.getNumberOfPages());
@@ -73,13 +74,13 @@ class PdfDocumentServiceTest {
         CompanyProfile company = new CompanyProfile();
         company.setTradeName("Test Company");
         Sale sale = saleWithTakas(1);
-        sale.getTakaEntries().get(0).setMeters(0.7);
-        sale.setTotalMeters(0.7);
+        sale.getTakaEntries().get(0).setMeters(new BigDecimal("0.70"));
+        sale.setTotalMeters(new BigDecimal("0.70"));
         when(currentCompanyContext.getCompanyId()).thenReturn(null);
         when(companyProfileRepository.findFirstByOrderByIdAsc()).thenReturn(Optional.of(company));
 
         PdfDocumentService service = new PdfDocumentService(companyProfileRepository, currentCompanyContext,
-                org.mockito.Mockito.mock(PrivateObjectStorageService.class));
+                org.mockito.Mockito.mock(PrivateObjectStorageService.class), 200, 20);
 
         PdfReader challanReader = new PdfReader(service.generateChallan(sale));
         assertEquals(true, new PdfTextExtractor(challanReader).getTextFromPage(1, false).contains("0.70"));
@@ -106,7 +107,7 @@ class PdfDocumentServiceTest {
         for (int i = 1; i <= count; i++) {
             TakaEntry taka = new TakaEntry();
             taka.setTakaNo(i);
-            taka.setMeters(10.0);
+            taka.setMeters(new BigDecimal("10.00"));
             sale.getTakaEntries().add(taka);
         }
         return sale;

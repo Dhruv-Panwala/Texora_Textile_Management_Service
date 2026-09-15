@@ -1,0 +1,90 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: textile-backend
+  labels:
+    app: textile-management
+  annotations:
+    run.googleapis.com/ingress: internal-and-cloud-load-balancing
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      serviceAccountName: textile-backend@PROJECT_ID.iam.gserviceaccount.com
+      containerConcurrency: 40
+      timeoutSeconds: 60
+      containers:
+        - name: backend
+          image: IMAGE_PLACEHOLDER
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: textile-database-url
+                  key: latest
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: textile-database-username
+                  key: latest
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: textile-database-password
+                  key: latest
+            - name: APP_CORS_ALLOWED_ORIGIN
+              value: https://APP_PAGES_DOMAIN
+            - name: APP_PUBLIC_URL
+              value: https://APP_PAGES_DOMAIN
+            - name: APP_TRUSTED_PROXY
+              value: cloudflare
+            - name: APP_SESSION_COOKIE_SECURE
+              value: "true"
+            - name: APP_SESSION_COOKIE_SAME_SITE
+              value: none
+            - name: APP_SESSION_TIMEOUT
+              value: 30m
+            - name: APP_SEED_ENABLED
+              value: "false"
+            - name: APP_STORAGE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: textile-storage-access-key
+                  key: latest
+            - name: APP_STORAGE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: textile-storage-secret-key
+                  key: latest
+            - name: MAIL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: textile-mail-password
+                  key: latest
+            - name: JAVA_TOOL_OPTIONS
+              value: -XX:MaxRAMPercentage=70 -XX:+UseSerialGC
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

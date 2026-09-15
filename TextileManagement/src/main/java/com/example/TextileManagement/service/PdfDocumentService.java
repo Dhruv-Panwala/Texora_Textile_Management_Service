@@ -8,11 +8,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.example.TextileManagement.config.CurrentCompanyContext;
+import com.example.TextileManagement.config.InputLimitExceededException;
 import com.example.TextileManagement.entities.CompanyProfile;
 import com.example.TextileManagement.entities.Customer;
 import com.example.TextileManagement.entities.Sale;
@@ -42,16 +44,23 @@ public class PdfDocumentService {
     private final CompanyProfileRepository companyProfileRepository;
     private final CurrentCompanyContext currentCompanyContext;
     private final PrivateObjectStorageService objectStorage;
+    private final int maxTakaEntries;
+    private final int maxPages;
 
     public PdfDocumentService(CompanyProfileRepository companyProfileRepository, CurrentCompanyContext currentCompanyContext,
-            PrivateObjectStorageService objectStorage) {
+            PrivateObjectStorageService objectStorage,
+            @Value("${app.sales.max-taka-entries:200}") int maxTakaEntries,
+            @Value("${app.pdf.max-pages:20}") int maxPages) {
         this.companyProfileRepository = companyProfileRepository;
         this.currentCompanyContext = currentCompanyContext;
         this.objectStorage = objectStorage;
+        this.maxTakaEntries = Math.max(1, maxTakaEntries);
+        this.maxPages = Math.max(1, maxPages);
     }
 
     @Transactional(readOnly = true)
     public byte[] generateChallan(Sale sale) {
+        List<ChallanLayoutPlanner.ChallanPage> challanGroups = validatePdfLimits(sale);
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             Document document = new Document(PageSize.A4, 24, 24, 20, 14);
@@ -59,8 +68,6 @@ public class PdfDocumentService {
             document.open();
 
             CompanyProfile company = company();
-            List<ChallanLayoutPlanner.ChallanPage> challanGroups = ChallanLayoutPlanner.plan(
-                    sale.getTakaEntries(), sale.isBalanceChallanColumnsByMeters());
             for (int index = 0; index < challanGroups.size(); index++) {
                 if (index > 0) {
                     document.newPage();
@@ -83,6 +90,7 @@ public class PdfDocumentService {
 
     @Transactional(readOnly = true)
     public byte[] generateBill(Sale sale) {
+        validatePdfLimits(sale);
         try {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             Document document = new Document(PageSize.A4, 24, 24, 20, 20);
@@ -103,6 +111,21 @@ public class PdfDocumentService {
         } catch (Exception ex) {
             throw new IllegalStateException("Unable to generate bill PDF", ex);
         }
+    }
+
+    private List<ChallanLayoutPlanner.ChallanPage> validatePdfLimits(Sale sale) {
+        if (sale == null || sale.getTakaEntries() == null) {
+            throw new InputLimitExceededException("Sale taka entries are required");
+        }
+        if (sale.getTakaEntries().size() > maxTakaEntries) {
+            throw new InputLimitExceededException("Too many taka entries for a PDF");
+        }
+        List<ChallanLayoutPlanner.ChallanPage> pages = ChallanLayoutPlanner.plan(
+                sale.getTakaEntries(), sale.isBalanceChallanColumnsByMeters());
+        if (pages.size() > maxPages) {
+            throw new InputLimitExceededException("PDF exceeds the maximum page count");
+        }
+        return pages;
     }
 
     private void addTopLine(Document document, CompanyProfile company) throws Exception {
@@ -157,11 +180,11 @@ public class PdfDocumentService {
     }
 
     private void addTakaTable(Document document, ChallanLayoutPlanner.ChallanPage challanPage) throws Exception {
-        double[] groupTotals = new double[CHALLAN_COLUMNS];
+        BigDecimal[] groupTotals = new BigDecimal[CHALLAN_COLUMNS];
         for (int group = 0; group < CHALLAN_COLUMNS; group++) {
             groupTotals[group] = challanPage.columns().get(group).stream()
-                    .mapToDouble(taka -> safe(taka.getMeters()))
-                    .sum();
+                    .map(taka -> safe(taka.getMeters()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
         }
         PdfPTable table = new PdfPTable(CHALLAN_COLUMNS * 3);
         table.setWidthPercentage(100);
@@ -191,7 +214,8 @@ public class PdfDocumentService {
     }
 
     private void addChallanTotals(Document document, List<TakaEntry> entries) throws Exception {
-        double totalMeters = entries.stream().mapToDouble(taka -> safe(taka.getMeters())).sum();
+        BigDecimal totalMeters = entries.stream().map(taka -> safe(taka.getMeters()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         PdfPTable table = new PdfPTable(new float[] { 120, 140, 120, 140 });
         table.setWidthPercentage(92);
         table.addCell(borderless("Total Pieces", bold(11), Element.ALIGN_LEFT));
@@ -422,12 +446,8 @@ public class PdfDocumentService {
         return profile;
     }
 
-    private double safe(Double value) {
-        return value == null ? 0.0 : value;
-    }
-
-    private String money(Double value) {
-        return money(safe(value));
+    private BigDecimal safe(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     private String money(BigDecimal value) {
@@ -436,12 +456,6 @@ public class PdfDocumentService {
 
     private BigDecimal safeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
-    }
-
-    private String money(double value) {
-        return BigDecimal.valueOf(value)
-                .setScale(2, RoundingMode.HALF_UP)
-                .toPlainString();
     }
 
     private String value(String value) {

@@ -3,6 +3,7 @@ package com.example.TextileManagement.controller;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
 import java.awt.image.BufferedImage;
@@ -19,6 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.example.TextileManagement.config.CurrentCompanyContext;
@@ -47,6 +50,7 @@ class CompanyControllerTest {
 
     private CompanyController controller;
     private CompanyProfile profile;
+    private Authentication owner;
 
     @BeforeEach
     void setUp() {
@@ -54,7 +58,7 @@ class CompanyControllerTest {
                 objectStorage);
         profile = new CompanyProfile();
         when(companyContext.getCompanyId()).thenReturn(10L);
-        when(repository.findById(10L)).thenReturn(Optional.of(profile));
+        owner = new UsernamePasswordAuthenticationToken("owner@example.com", null);
     }
 
     @Test
@@ -62,7 +66,9 @@ class CompanyControllerTest {
         byte[] png = png(24, 16);
         MockMultipartFile file = new MockMultipartFile("file", "logo.txt", "text/plain", png);
 
-        controller.updateCompanyLogo(file);
+        when(workspaceRoleAccessService.canManageCompanySettings("owner@example.com", 10L)).thenReturn(true);
+        when(repository.findById(10L)).thenReturn(Optional.of(profile));
+        controller.updateCompanyLogo(file, owner);
 
         assertArrayEquals(png, profile.getLogoData());
         assertEquals("image/png", profile.getLogoContentType());
@@ -74,7 +80,38 @@ class CompanyControllerTest {
     void rejectsNonImageBytes() {
         MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", "not-an-image".getBytes());
 
-        assertThrows(ResponseStatusException.class, () -> controller.updateCompanyLogo(file));
+        when(workspaceRoleAccessService.canManageCompanySettings("owner@example.com", 10L)).thenReturn(true);
+        when(repository.findById(10L)).thenReturn(Optional.of(profile));
+        assertThrows(ResponseStatusException.class, () -> controller.updateCompanyLogo(file, owner));
+    }
+
+    @Test
+    void rejectsOversizedImageMetadataBeforeDecode() throws Exception {
+        byte[] bytes = png(1, 1);
+        writeInt(bytes, 16, 3000);
+        writeInt(bytes, 20, 3000);
+        MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", bytes);
+
+        when(workspaceRoleAccessService.canManageCompanySettings("owner@example.com", 10L)).thenReturn(true);
+        when(repository.findById(10L)).thenReturn(Optional.of(profile));
+
+        assertThrows(ResponseStatusException.class, () -> controller.updateCompanyLogo(file, owner));
+    }
+
+    @Test
+    void resizesWideLogoBeforeStorage() throws Exception {
+        byte[] original = png(3000, 1000);
+        MockMultipartFile file = new MockMultipartFile("file", "logo.png", "image/png", original);
+
+        when(workspaceRoleAccessService.canManageCompanySettings("owner@example.com", 10L)).thenReturn(true);
+        when(repository.findById(10L)).thenReturn(Optional.of(profile));
+        controller.updateCompanyLogo(file, owner);
+
+        assertEquals(2000, profile.getLogoWidth());
+        assertEquals(667, profile.getLogoHeight());
+        BufferedImage stored = ImageIO.read(new java.io.ByteArrayInputStream(profile.getLogoData()));
+        assertEquals(2000, stored.getWidth());
+        assertEquals(667, stored.getHeight());
     }
 
     @Test
@@ -82,6 +119,7 @@ class CompanyControllerTest {
         byte[] logo = new byte[] {1, 2, 3};
         profile.setLogoStorageKey("companies/10/logos/logo");
         profile.setLogoContentType("image/png");
+        when(repository.findById(10L)).thenReturn(Optional.of(profile));
         when(objectStorage.isEnabled()).thenReturn(true);
         when(objectStorage.read(profile.getLogoStorageKey())).thenReturn(logo);
 
@@ -89,6 +127,8 @@ class CompanyControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("image/png", response.getHeaders().getContentType().toString());
+        assertTrue(response.getHeaders().getCacheControl().contains("private"));
+        assertTrue(response.getHeaders().getCacheControl().contains("max-age=31536000"));
         assertArrayEquals(logo, response.getBody());
     }
 
@@ -97,5 +137,12 @@ class CompanyControllerTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         ImageIO.write(image, "png", output);
         return output.toByteArray();
+    }
+
+    private void writeInt(byte[] bytes, int offset, int value) {
+        bytes[offset] = (byte) (value >>> 24);
+        bytes[offset + 1] = (byte) (value >>> 16);
+        bytes[offset + 2] = (byte) (value >>> 8);
+        bytes[offset + 3] = (byte) value;
     }
 }

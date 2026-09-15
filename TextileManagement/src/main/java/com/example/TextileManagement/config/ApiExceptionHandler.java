@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,16 @@ public class ApiExceptionHandler {
     @ExceptionHandler({ObjectOptimisticLockingFailureException.class, jakarta.persistence.OptimisticLockException.class})
     ResponseEntity<ApiError> handleConcurrentUpdate(Exception ignored) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiError("This record was changed by another user"));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiError> handleMethodNotAllowed(HttpRequestMethodNotSupportedException ignored) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).body(new ApiError("Method not allowed"));
+    }
+
+    @ExceptionHandler(InputLimitExceededException.class)
+    ResponseEntity<ApiError> handleInputLimit(InputLimitExceededException ignored) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(new ApiError("Request exceeds the allowed limit"));
     }
 
     @ExceptionHandler(Exception.class)

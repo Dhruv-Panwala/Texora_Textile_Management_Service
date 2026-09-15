@@ -78,11 +78,11 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.allSettled([api.me(), api.getCompanyProfiles()]).then(([sessionResult, companiesResult]) => {
+    Promise.allSettled([api.bootstrap()]).then(([bootstrapResult]) => {
       if (cancelled) {
         return;
       }
-      if (sessionResult.status === 'rejected') {
+      if (bootstrapResult.status === 'rejected') {
         clearCompanyId();
         clearCompanyProfileCache();
         setCompanies([]);
@@ -95,13 +95,7 @@ function App() {
       }
       setAuthenticated(true);
       setAuthReady(true);
-      if (companiesResult.status === 'fulfilled') {
-        selectCompany(companiesResult.value);
-      } else {
-        setWorkspaceError(companiesResult.reason instanceof Error ? companiesResult.reason.message : 'Could not load your companies. Please refresh the page.');
-        setCompaniesReady(true);
-        setWorkspaceReady(true);
-      }
+      selectCompany(bootstrapResult.value.companies);
     });
 
     return () => {
@@ -116,7 +110,7 @@ function App() {
 
     let cancelled = false;
     setWorkspaceReady(false);
-    api.getCompanyProfiles().then((loadedCompanies) => {
+    api.bootstrap().then(({ companies: loadedCompanies }) => {
       if (cancelled) {
         return;
       }
@@ -178,18 +172,6 @@ function App() {
     );
   }
 
-  if (authenticated && !workspaceReady) {
-    return (
-      <div className="app-shell flex min-h-screen items-center justify-center px-6 text-center">
-        <div className="glass-panel max-w-md px-8 py-10">
-          <p className="stat-chip mb-4">Preparing workspace</p>
-          <h1 className="page-title text-3xl">Loading your company...</h1>
-          <p className="page-subtitle">Selecting the active company before loading company data.</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <Router>
       {!authenticated ? (
@@ -233,23 +215,25 @@ function App() {
             <main key={activeCompanyId || 'default'} className="mobile-safe px-4 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8">
               {permissionMessage && <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900"><span>{permissionMessage}</span><button type="button" className="text-amber-700 underline" onClick={() => setPermissionMessage('')}>Dismiss</button></div>}
               {workspaceError && <div role="alert" className="mb-4 flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800"><span>{workspaceError}</span><button type="button" className="text-red-700 underline" onClick={() => setWorkspaceError('')}>Dismiss</button></div>}
-              <Suspense fallback={<RouteLoading />}>
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/purchases" element={<Purchases />} />
-                  <Route path="/sales" element={<Sales />} />
-                  <Route path="/payments" element={<Payments />} />
-                  <Route path="/suppliers" element={<Suppliers />} />
-                  <Route path="/customers" element={<Customers />} />
-                  <Route path="/company" element={<Company />} />
-                  <Route path="/members" element={<Members />} />
-                  <Route path="/accept-invitation" element={<AcceptInvitation onAuthenticated={handleAuthenticated} />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                  <Route path="/login" element={<Navigate to="/" replace />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-              </Suspense>
+              {!workspaceReady ? <RouteLoading /> : (
+                <Suspense fallback={<RouteLoading />}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/purchases" element={<Purchases />} />
+                    <Route path="/sales" element={<Sales />} />
+                    <Route path="/payments" element={<Payments />} />
+                    <Route path="/suppliers" element={<Suppliers />} />
+                    <Route path="/customers" element={<Customers />} />
+                    <Route path="/company" element={<Company />} />
+                    <Route path="/members" element={<Members />} />
+                    <Route path="/accept-invitation" element={<AcceptInvitation onAuthenticated={handleAuthenticated} />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/login" element={<Navigate to="/" replace />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
+              )}
             </main>
           </div>
         </div>

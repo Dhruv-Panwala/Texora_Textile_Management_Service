@@ -1,4 +1,4 @@
-import type { CompanyProfile, InvitationCreated, SavedTakaEntry, WorkspaceMember, WorkspaceSummary, WorkspaceRole } from '../types';
+import type { CompanyProfile, InvitationCreated, PageResult, SavedTakaEntry, WorkspaceMember, WorkspaceSummary, WorkspaceRole } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 const COMPANY_KEY = 'textile_company_id';
@@ -9,11 +9,50 @@ const companyProfileCache = new Map<string, CompanyProfile>();
 
 type ApiRequestOptions = RequestInit & {
   includeCompanyId?: boolean;
+  timeoutMs?: number;
 };
+
+const API_TIMEOUT_MS = 15_000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = API_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const headers = new Headers(init.headers);
+  const requestId = globalThis.crypto?.randomUUID?.();
+  if (requestId && !headers.has('X-Request-ID')) {
+    headers.set('X-Request-ID', requestId);
+  }
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abort = () => controller.abort();
+  if (init.signal?.aborted) {
+    controller.abort();
+  } else {
+    init.signal?.addEventListener('abort', abort, { once: true });
+  }
+  try {
+    return await fetch(input, { ...init, headers, signal: controller.signal });
+  } catch (error) {
+    if (timedOut && error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('The request timed out. Please try again.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    init.signal?.removeEventListener('abort', abort);
+  }
+}
 
 function withCompanyQuery(path: string, companyId: string) {
   const separator = path.includes('?') ? '&' : '?';
   return `${path}${separator}companyId=${encodeURIComponent(companyId)}`;
+}
+
+function withQueryParam(path: string, name: string, value: string | number) {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}${name}=${encodeURIComponent(String(value))}`;
 }
 
 export function getCompanyId() {
@@ -54,12 +93,17 @@ async function getCsrfToken() {
   if (csrfToken) {
     return csrfToken;
   }
-  const response = await fetch(`${API_BASE_URL}/api/auth/csrf`, { credentials: 'include' });
+  const response = await fetchWithTimeout(`${API_BASE_URL}/api/auth/csrf`, { credentials: 'include' });
   if (!response.ok) {
     throw new Error('Could not establish a secure session.');
   }
-  const body = await response.json() as { token: string };
-  csrfToken = body.token;
+  const csrfCookie = document.cookie.split('; ').find((cookie) => cookie.startsWith('XSRF-TOKEN='));
+  if (csrfCookie) {
+    csrfToken = decodeURIComponent(csrfCookie.substring('XSRF-TOKEN='.length));
+  } else {
+    const body = await response.json() as { token: string };
+    csrfToken = body.token;
+  }
   return csrfToken;
 }
 
@@ -85,7 +129,7 @@ async function handleForbidden<T>(response: Response): Promise<T> {
 }
 
 async function request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { includeCompanyId = true, ...fetchOptions } = options;
+  const { includeCompanyId = true, timeoutMs = API_TIMEOUT_MS, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers);
   const method = (fetchOptions.method || 'GET').toUpperCase();
   const isReadRequest = method === 'GET' || method === 'HEAD';
@@ -104,9 +148,13 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
     headers.set('X-Company-Id', companyId);
   }
 
-  const response = await fetch(`${API_BASE_URL}${requestPath}`, { ...fetchOptions, headers, credentials: 'include' });
+  const response = await fetchWithTimeout(`${API_BASE_URL}${requestPath}`, {
+    ...fetchOptions,
+    headers,
+    credentials: 'include',
+  }, timeoutMs);
   if (!response.ok) {
-    if (response.status === 401 && path === '/api/auth/me') {
+    if (response.status === 401 && (path === '/api/auth/me' || path === '/api/auth/bootstrap')) {
       return handleAuthExpired<T>();
     }
     if (response.status === 403) {
@@ -122,6 +170,14 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
 
 export const api = {
   me: () => request<{ username: string; displayName?: string }>('/api/auth/me'),
+  bootstrap: async () => {
+    const result = await request<{
+      user: { username: string; displayName?: string };
+      companies: CompanyProfile[];
+    }>('/api/auth/bootstrap');
+    result.companies.forEach(cacheCompanyProfile);
+    return result;
+  },
   login: (username: string, password: string) =>
     request<{ username: string }>('/api/auth/login', {
       method: 'POST',
@@ -167,7 +223,7 @@ export const api = {
     return response;
   },
   getWorkspaces: () => request<WorkspaceSummary[]>('/api/workspaces'),
-  getWorkspaceMembers: (workspaceId: number) => request<WorkspaceMember[]>(`/api/workspaces/${workspaceId}/members`),
+  getWorkspaceMembers: (workspaceId: number, page = 0, size = 25) => request<PageResult<WorkspaceMember>>(`/api/workspaces/${workspaceId}/members?page=${page}&size=${size}`),
   inviteWorkspaceMember: (workspaceId: number, email: string, role: Exclude<WorkspaceRole, 'OWNER'>) =>
     request<InvitationCreated>(`/api/workspaces/${workspaceId}/invitations`, {
       method: 'POST',
@@ -180,7 +236,13 @@ export const api = {
     }),
   removeWorkspaceMember: (workspaceId: number, userId: number) =>
     request<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
-  getSavedTakaEntries: () => request<SavedTakaEntry[]>('/api/taka-entries'),
+  getSavedTakaEntries: (page = 0, size = 100) => request<PageResult<SavedTakaEntry>>(`/api/taka-entries?page=${page}&size=${size}`),
+  createSavedTakaEntries: (entries: Pick<SavedTakaEntry, 'takaNo' | 'meters'>[], idempotencyKey = globalThis.crypto?.randomUUID?.() || `taka-${Date.now()}-${Math.random()}`) =>
+    request<SavedTakaEntry[]>('/api/taka-entries/batch', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ entries }),
+    }),
   createSavedTakaEntry: (entry: Pick<SavedTakaEntry, 'takaNo' | 'meters'>) =>
     request<SavedTakaEntry>('/api/taka-entries', { method: 'POST', body: JSON.stringify(entry) }),
   deleteSavedTakaEntry: (id: number) => request<void>(`/api/taka-entries/${id}`, { method: 'DELETE' }),
@@ -220,8 +282,13 @@ export const api = {
   },
   getCompanyLogo: async () => {
     const companyId = getCompanyId();
-    const requestPath = companyId ? withCompanyQuery('/api/company/logo', companyId) : '/api/company/logo';
-    const response = await fetch(`${API_BASE_URL}${requestPath}`, {
+    const cachedProfile = companyId ? companyProfileCache.get(companyId) : undefined;
+    let requestPath = companyId ? withCompanyQuery('/api/company/logo', companyId) : '/api/company/logo';
+    const logoVersion = cachedProfile?.version ?? cachedProfile?.updatedAt;
+    if (logoVersion != null) {
+      requestPath = withQueryParam(requestPath, 'v', logoVersion);
+    }
+    const response = await fetchWithTimeout(`${API_BASE_URL}${requestPath}`, {
       credentials: 'include',
     });
     if (response.status === 404) {
@@ -241,7 +308,7 @@ export const api = {
   download: async (path: string, filename: string) => {
     const companyId = getCompanyId();
     const requestPath = companyId ? withCompanyQuery(path, companyId) : path;
-    const response = await fetch(`${API_BASE_URL}${requestPath}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}${requestPath}`, {
       credentials: 'include',
     });
     if (!response.ok) {

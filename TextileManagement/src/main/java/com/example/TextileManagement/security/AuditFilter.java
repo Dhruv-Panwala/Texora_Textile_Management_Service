@@ -18,9 +18,11 @@ import jakarta.servlet.http.HttpServletResponse;
 public class AuditFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(AuditFilter.class);
     private final AuditService auditService;
+    private final ClientIpResolver clientIpResolver;
 
-    public AuditFilter(AuditService auditService) {
+    public AuditFilter(AuditService auditService, ClientIpResolver clientIpResolver) {
         this.auditService = auditService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @Override
@@ -31,7 +33,7 @@ public class AuditFilter extends OncePerRequestFilter {
         } finally {
             try {
                 auditService.record(request.getMethod(), request.getRequestURI(), response.getStatus(),
-                        request.getRemoteAddr());
+                        clientIpResolver.resolve(request));
             } catch (RuntimeException exception) {
                 // ponytail: audit failure must not turn a successful business request into a 500 response.
                 log.warn("Could not persist audit event");

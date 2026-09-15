@@ -31,6 +31,8 @@ import com.example.TextileManagement.dto.PurchaseListItem;
 import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.example.TextileManagement.repository.PurchaseRepository;
 import com.example.TextileManagement.repository.SupplierRepository;
+import com.example.TextileManagement.service.TakaEntryValidator;
+import com.example.TextileManagement.service.VersionConflict;
 
 @RestController
 @RequestMapping("/api/purchases")
@@ -52,7 +54,8 @@ public class PurchaseController {
             @RequestParam(defaultValue = "25") int size) {
         int boundedSize = Math.min(Math.max(size, 1), 100);
         return PageResponse.from(purchaseRepository.findPageForList(currentCompanyId(),
-                PageRequest.of(Math.max(0, page), boundedSize, Sort.by("purchaseDate").descending())));
+                PageRequest.of(Math.max(0, page), boundedSize,
+                        Sort.by("purchaseDate").descending().and(Sort.by("id").descending()))));
     }
 
     @PostMapping
@@ -66,6 +69,7 @@ public class PurchaseController {
     @Transactional
     public ResponseEntity<Purchase> update(@PathVariable Long id, @RequestBody Purchase request) {
         return purchaseRepository.findByIdAndCompany_Id(id, currentCompanyId()).map(existing -> {
+            VersionConflict.requireCurrent(request.getVersion(), existing.getVersion());
             existing.setPurchaseDate(request.getPurchaseDate());
             existing.setSupplier(resolveSupplier(request.getSupplier()));
             existing.setMaterialType(request.getMaterialType());
@@ -88,6 +92,7 @@ public class PurchaseController {
     @Transactional
     public ResponseEntity<Purchase> markPaid(@PathVariable Long id, @RequestBody PaymentUpdate payment) {
         return purchaseRepository.findByIdAndCompany_Id(id, currentCompanyId()).map(purchase -> {
+            VersionConflict.requireCurrent(payment == null ? null : payment.version(), purchase.getVersion());
             purchase.setStatus("PAID");
             applyPaymentDetails(purchase, payment);
             return ResponseEntity.ok(purchaseRepository.save(purchase));
@@ -117,16 +122,21 @@ public class PurchaseController {
                 && (purchase.getDescription() == null || purchase.getDescription().isBlank())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Description is required for miscellaneous purchases");
         }
-        if (purchase.getQuantity() == null || purchase.getQuantity() <= 0) {
+        if (purchase.getQuantity() == null || purchase.getQuantity().compareTo(BigDecimal.ZERO) <= 0
+                || purchase.getQuantity().compareTo(TakaEntryValidator.MAX_METERS_PER_ENTRY) > 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be greater than zero");
+        }
+        try {
+            purchase.setQuantity(purchase.getQuantity().setScale(TakaEntryValidator.MAX_DECIMAL_PLACES, RoundingMode.UNNECESSARY));
+        } catch (ArithmeticException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity can have at most two decimal places");
         }
         if (purchase.getRate() == null || purchase.getRate().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rate must be greater than zero");
         }
         purchase.setDueDate(purchase.getPurchaseDate().plusDays(45));
         purchase.setRate(purchase.getRate().setScale(2, RoundingMode.HALF_UP));
-        purchase.setAmount(BigDecimal.valueOf(purchase.getQuantity())
-                .multiply(purchase.getRate())
+        purchase.setAmount(purchase.getQuantity().multiply(purchase.getRate())
                 .setScale(2, RoundingMode.HALF_UP));
         if (purchase.getStatus() == null || purchase.getStatus().isBlank()) {
             purchase.setStatus("PENDING");
@@ -167,7 +177,7 @@ public class PurchaseController {
         if (!"CHEQUE".equals(mode)) {
             chequeNo = "";
         }
-        return new PaymentUpdate(payment.paymentDate(), mode, chequeNo);
+        return new PaymentUpdate(payment.paymentDate(), mode, chequeNo, payment.version());
     }
 
     private Long currentCompanyId() {

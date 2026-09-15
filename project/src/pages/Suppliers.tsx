@@ -14,6 +14,7 @@ function Suppliers() {
   const [isAddingSupplier, setIsAddingSupplier] = useState(false);
   const [newSupplier, setNewSupplier] = useState(emptySupplier);
   const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
+  const [editingSupplierVersion, setEditingSupplierVersion] = useState<number | undefined>();
   const [editingSupplier, setEditingSupplier] = useState(emptySupplier);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
@@ -37,10 +38,12 @@ function Suppliers() {
     e.preventDefault();
     setError('');
     try {
-      await api.post<Supplier>('/api/suppliers', { ...newSupplier, contact: newSupplier.contact.trim() });
+      const createdSupplier = await api.post<Supplier>('/api/suppliers', { ...newSupplier, contact: newSupplier.contact.trim() });
+      setSuppliers((current) => page === 0
+        ? [...current, createdSupplier].sort((left, right) => left.name.localeCompare(right.name)).slice(0, 25)
+        : current);
       setNewSupplier(emptySupplier);
       setIsAddingSupplier(false);
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save supplier');
     }
@@ -48,6 +51,7 @@ function Suppliers() {
 
   const startEdit = (supplier: Supplier) => {
     setEditingSupplierId(supplier.id);
+    setEditingSupplierVersion(supplier.version);
     setEditingSupplier({
       name: supplier.name || '',
       contact: supplier.contact || '',
@@ -57,6 +61,7 @@ function Suppliers() {
 
   const cancelEdit = () => {
     setEditingSupplierId(null);
+    setEditingSupplierVersion(undefined);
     setEditingSupplier(emptySupplier);
   };
 
@@ -67,9 +72,13 @@ function Suppliers() {
     }
     setError('');
     try {
-      await api.put<Supplier>(`/api/suppliers/${editingSupplierId}`, { ...editingSupplier, contact: editingSupplier.contact.trim() });
+      const updatedSupplier = await api.put<Supplier>(`/api/suppliers/${editingSupplierId}`, {
+        ...editingSupplier,
+        contact: editingSupplier.contact.trim(),
+        version: editingSupplierVersion,
+      });
+      setSuppliers((current) => current.map((supplier) => supplier.id === updatedSupplier.id ? updatedSupplier : supplier));
       cancelEdit();
-      await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not update supplier');
     }
@@ -82,7 +91,7 @@ function Suppliers() {
     setError('');
     try {
       await api.delete(`/api/suppliers/${supplier.id}`);
-      await load();
+      setSuppliers((current) => current.filter((currentSupplier) => currentSupplier.id !== supplier.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not delete supplier');
     }

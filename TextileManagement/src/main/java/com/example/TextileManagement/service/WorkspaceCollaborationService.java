@@ -11,6 +11,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,43 +41,45 @@ public class WorkspaceCollaborationService {
     private final UserAccountRepository userRepository;
     private final InvitationRepository invitationRepository;
     private final PasswordEncoder passwordEncoder;
-    private final MailService mailService;
+    private final EmailOutboxService outboxService;
     private final CompanyProfileRepository companyProfileRepository;
 
     public WorkspaceCollaborationService(WorkspaceRepository workspaceRepository,
             WorkspaceMemberRepository memberRepository, UserAccountRepository userRepository,
-            InvitationRepository invitationRepository, PasswordEncoder passwordEncoder, MailService mailService,
-            CompanyProfileRepository companyProfileRepository) {
+            InvitationRepository invitationRepository, PasswordEncoder passwordEncoder,
+            CompanyProfileRepository companyProfileRepository, EmailOutboxService outboxService) {
         this.workspaceRepository = workspaceRepository;
         this.memberRepository = memberRepository;
         this.userRepository = userRepository;
         this.invitationRepository = invitationRepository;
         this.passwordEncoder = passwordEncoder;
-        this.mailService = mailService;
+        this.outboxService = outboxService;
         this.companyProfileRepository = companyProfileRepository;
     }
 
     @Transactional(readOnly = true)
     public List<WorkspaceSummary> listWorkspaces(String username) {
-        return workspaceRepository.findAllAccessibleByUsername(username).stream()
+        return workspaceRepository.findAccessibleWithRoleByUsername(username).stream()
                 .map(workspace -> new WorkspaceSummary(workspace.getId(), workspace.getName(),
-                        roleFor(workspace.getId(), username)))
+                        workspace.getRole() == null ? "VIEWER" : workspace.getRole()))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<MemberSummary> listMembers(Long workspaceId, String username) {
+    public Page<MemberSummary> listMembers(Long workspaceId, String username, int page, int size) {
         requireMember(workspaceId, username);
-        return memberRepository.findAllByWorkspace_IdOrderByCreatedAtAsc(workspaceId).stream()
+        int boundedSize = Math.min(Math.max(size, 1), 100);
+        return memberRepository.findAllByWorkspace_Id(workspaceId,
+                PageRequest.of(Math.max(page, 0), boundedSize, Sort.by("createdAt").ascending().and(Sort.by("id").ascending())))
                 .map(member -> new MemberSummary(member.getUser().getId(), member.getUser().getUsername(),
                         member.getUser().getEmail(), member.getUser().getDisplayName(), member.getRole(),
-                        member.getCreatedAt()))
-                .toList();
+                        member.getCreatedAt()));
     }
 
     @Transactional
     public InvitationCreated invite(Long workspaceId, String username, String email, String role) {
-        Workspace workspace = requireManager(workspaceId, username);
+        WorkspaceMember manager = requireManager(workspaceId, username);
+        Workspace workspace = manager.getWorkspace();
         String normalizedEmail = normalizeEmail(email);
         String normalizedRole = normalizeRole(role);
         if (!validEmail(normalizedEmail) || !INVITABLE_ROLES.contains(normalizedRole)) {
@@ -93,14 +98,14 @@ public class WorkspaceCollaborationService {
         invitation.setRole(normalizedRole);
         invitation.setTokenHash(hashToken(token));
         invitation.setExpiresAt(LocalDateTime.now().plusDays(INVITATION_DAYS));
-        invitation.setInvitedBy(requireMember(workspaceId, username).getUser());
+        invitation.setInvitedBy(manager.getUser());
         invitation = invitationRepository.save(invitation);
         String businessNames = companyProfileRepository.findAllByWorkspace_IdOrderByTradeNameAsc(workspaceId).stream()
                 .map(CompanyProfile::getTradeName)
                 .filter(name -> name != null && !name.isBlank())
                 .collect(Collectors.joining(", "));
-        mailService.sendInvitation(normalizedEmail,
-                businessNames.isBlank() ? workspace.getName() : businessNames, normalizedRole, token);
+        String invitationWorkspaceName = businessNames.isBlank() ? workspace.getName() : businessNames;
+        outboxService.enqueueInvitation(normalizedEmail, invitationWorkspaceName, normalizedRole, token);
         return new InvitationCreated(invitation.getId(), normalizedEmail, normalizedRole,
                 invitation.getExpiresAt(), token);
     }
@@ -164,12 +169,12 @@ public class WorkspaceCollaborationService {
         invitation.setAcceptedAt(LocalDateTime.now());
     }
 
-    private Workspace requireManager(Long workspaceId, String username) {
+    private WorkspaceMember requireManager(Long workspaceId, String username) {
         WorkspaceMember member = requireMember(workspaceId, username);
         if (!MANAGER_ROLES.contains(member.getRole())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Workspace manager access is required");
         }
-        return member.getWorkspace();
+        return member;
     }
 
     private WorkspaceMember requireMember(Long workspaceId, String username) {
@@ -197,12 +202,6 @@ public class WorkspaceCollaborationService {
             membership.setRole(invitation.getRole());
             memberRepository.save(membership);
         }
-    }
-
-    private String roleFor(Long workspaceId, String username) {
-        return memberRepository.findByWorkspace_IdAndUser_UsernameIgnoreCase(workspaceId, username)
-                .map(WorkspaceMember::getRole)
-                .orElse("VIEWER");
     }
 
     private String normalizeEmail(String value) {

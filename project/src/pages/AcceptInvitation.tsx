@@ -1,13 +1,14 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useLayoutEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 
 type Props = { onAuthenticated: () => void };
+const PENDING_INVITATION_TOKEN = 'textile_pending_invitation_token';
 
 function AcceptInvitation({ onAuthenticated }: Props) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const token = params.get('token') || '';
+  const [token] = useState(() => params.get('token') || sessionStorage.getItem(PENDING_INVITATION_TOKEN) || '');
   const [checkingSession, setCheckingSession] = useState(true);
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +16,13 @@ function AcceptInvitation({ onAuthenticated }: Props) {
   const [error, setError] = useState('');
   const [loginUrl, setLoginUrl] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useLayoutEffect(() => {
+    if (token) {
+      sessionStorage.setItem(PENDING_INVITATION_TOKEN, token);
+      window.history.replaceState(null, document.title, `${window.location.pathname}${window.location.hash}`);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (!token) {
@@ -27,6 +35,7 @@ function AcceptInvitation({ onAuthenticated }: Props) {
       .then(() => {
         if (active) {
           onAuthenticated();
+          sessionStorage.removeItem(PENDING_INVITATION_TOKEN);
           navigate('/', { replace: true });
         }
       })
@@ -53,12 +62,13 @@ function AcceptInvitation({ onAuthenticated }: Props) {
     setError('');
     try {
       await api.acceptInvitation({ token, displayName, password });
+      sessionStorage.removeItem(PENDING_INVITATION_TOKEN);
       onAuthenticated();
       navigate('/', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not accept invitation';
       if (message.includes('An account already exists')) {
-        const returnTo = `/accept-invitation?token=${encodeURIComponent(token)}`;
+        const returnTo = '/accept-invitation';
         setError('An account already exists for this email. Sign in first, then this invitation will be accepted automatically.');
         setDisplayName('');
         setPassword('');

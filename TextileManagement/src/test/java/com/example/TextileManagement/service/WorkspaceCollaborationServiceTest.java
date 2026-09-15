@@ -1,9 +1,14 @@
 package com.example.TextileManagement.service;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -15,6 +20,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.example.TextileManagement.entities.Invitation;
@@ -26,6 +33,7 @@ import com.example.TextileManagement.repository.CompanyProfileRepository;
 import com.example.TextileManagement.repository.UserAccountRepository;
 import com.example.TextileManagement.repository.WorkspaceMemberRepository;
 import com.example.TextileManagement.repository.WorkspaceRepository;
+import com.example.TextileManagement.repository.WorkspaceAccessProjection;
 
 @ExtendWith(MockitoExtension.class)
 class WorkspaceCollaborationServiceTest {
@@ -45,7 +53,7 @@ class WorkspaceCollaborationServiceTest {
     private PasswordEncoder passwordEncoder;
 
     @Mock
-    private MailService mailService;
+    private EmailOutboxService outboxService;
 
     @Mock
     private CompanyProfileRepository companyProfileRepository;
@@ -67,7 +75,46 @@ class WorkspaceCollaborationServiceTest {
         ownerMembership.setUser(owner);
         ownerMembership.setRole("OWNER");
         service = new WorkspaceCollaborationService(workspaceRepository, memberRepository, userRepository,
-                invitationRepository, passwordEncoder, mailService, companyProfileRepository);
+                invitationRepository, passwordEncoder, companyProfileRepository, outboxService);
+    }
+
+    @Test
+    void listsWorkspacesWithTheRoleFromTheSameQuery() {
+        WorkspaceAccessProjection access = mock(WorkspaceAccessProjection.class);
+        when(access.getId()).thenReturn(10L);
+        when(access.getName()).thenReturn("Textile Group");
+        when(access.getRole()).thenReturn("ADMIN");
+        when(workspaceRepository.findAccessibleWithRoleByUsername("owner@example.com"))
+                .thenReturn(java.util.List.of(access));
+
+        assertEquals(java.util.List.of(new WorkspaceCollaborationService.WorkspaceSummary(10L, "Textile Group", "ADMIN")),
+                service.listWorkspaces("owner@example.com"));
+        verifyNoInteractions(memberRepository);
+    }
+
+    @Test
+    void listsMembersWithAStableBoundedPage() {
+        UserAccount memberUser = new UserAccount();
+        memberUser.setId(21L);
+        memberUser.setUsername("member@example.com");
+        memberUser.setEmail("member@example.com");
+        WorkspaceMember member = new WorkspaceMember();
+        member.setId(3L);
+        member.setUser(memberUser);
+        member.setRole("STAFF");
+        when(memberRepository.findByWorkspace_IdAndUser_UsernameIgnoreCase(10L, "owner@example.com"))
+                .thenReturn(Optional.of(ownerMembership));
+        when(memberRepository.findAllByWorkspace_Id(eq(10L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(java.util.List.of(member)));
+
+        var result = service.listMembers(10L, "owner@example.com", 0, 500);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals("member@example.com", result.getContent().get(0).email());
+        var pageable = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        verify(memberRepository).findAllByWorkspace_Id(eq(10L), pageable.capture());
+        assertEquals(100, pageable.getValue().getPageSize());
+        assertTrue(pageable.getValue().getSort().isSorted());
     }
 
     @Test
